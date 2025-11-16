@@ -11,7 +11,7 @@ import {
   Space,
   Switch,
   Pagination,
-  message,
+  // message, // Hapus atau nonaktifkan ini
   Modal,
   Form,
 } from "antd";
@@ -22,6 +22,9 @@ import {
   EditOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
+// Import React Toastify
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css"; // Import CSS Toastify
 
 const { Title } = Typography;
 
@@ -56,7 +59,7 @@ const api = axios.create({
   },
 });
 
-// --- 2. Komponen Modal (Tidak ada perubahan) ---
+// --- 2. Komponen Modal (Diperbarui dengan Toastify) ---
 
 interface AcademicYearModalProps {
   action: ModalAction;
@@ -90,17 +93,20 @@ const AcademicYearModal: React.FC<AcademicYearModalProps> = ({
     try {
       if (action === "add") {
         await api.post("/academic-years", values);
-        message.success("Tahun Akademik berhasil ditambahkan!");
+        // Ganti message.success dengan toast.success
+        toast.success("Tahun Akademik berhasil ditambahkan!");
       } else if (action === "edit" && initialValues) {
         await api.put(`/academic-years/${initialValues.id}`, values);
-        message.success("Tahun Akademik berhasil diperbarui!");
+        // Ganti message.success dengan toast.success
+        toast.success("Tahun Akademik berhasil diperbarui!");
       }
       form.resetFields();
       onClose();
       onSuccess();
     } catch (error) {
       console.error("API Error:", error);
-      message.error("Gagal menyimpan data. Silakan coba lagi.");
+      // Ganti message.error dengan toast.error
+      toast.error("Gagal menyimpan data. Silakan coba lagi.");
     }
   };
 
@@ -136,7 +142,7 @@ const AcademicYearModal: React.FC<AcademicYearModalProps> = ({
   );
 };
 
-// --- 3. Komponen Halaman Utama ---
+// --- 3. Komponen Halaman Utama (Diperbarui dengan Toastify) ---
 
 const AcademicYearPage: React.FC = () => {
   const [data, setData] = useState<AcademicYearData[]>([]);
@@ -163,7 +169,8 @@ const AcademicYearPage: React.FC = () => {
       setData(formattedData);
     } catch (error) {
       console.error("Gagal memuat data Tahun Akademik:", error);
-      message.error("Gagal memuat data dari API.");
+      // Ganti message.error dengan toast.error
+      toast.error("Gagal memuat data dari API.");
     } finally {
       setIsLoading(false);
     }
@@ -213,12 +220,14 @@ const AcademicYearPage: React.FC = () => {
         is_genap: record.is_genap,
       });
 
-      message.success(`Status Tahun Akademik ${record.year} berhasil diubah.`);
+      // Ganti message.success dengan toast.success
+      toast.success(`Status Tahun Akademik ${record.year} berhasil diubah.`);
       // Sinkronisasi: Ambil data terbaru dari server
       fetchAcademicYears();
     } catch (error) {
       console.error("Gagal update status active:", error);
-      message.error("Gagal mengubah status aktif. Mengambil ulang data...");
+      // Ganti message.error dengan toast.error
+      toast.error("Gagal mengubah status aktif. Mengambil ulang data...");
       // Revert Update jika gagal/terjadi error
       fetchAcademicYears();
     }
@@ -238,7 +247,8 @@ const AcademicYearPage: React.FC = () => {
     // Hanya kirim permintaan PUT jika switch diaktifkan (checked = true)
     if (!checked) {
       // Jika mencoba menonaktifkan, kita hanya berikan peringatan dan memuat ulang data.
-      message.warning(
+      // Ganti message.warning dengan toast.warning
+      toast.warning(
         `Untuk menonaktifkan semester, aktifkan semester lainnya pada tahun ${record.year}.`
       );
       return;
@@ -267,7 +277,15 @@ const AcademicYearPage: React.FC = () => {
         semester: semesterValue,
       });
 
-      // 4. Tampilkan Notifikasi Modal dari API Response
+      // Ganti Modal.success dengan toast.success untuk notifikasi yang lebih cepat.
+      toast.success(
+        `Semester ${semesterValue} berhasil diaktifkan untuk tahun ${record.year}.`
+      );
+
+      // Jika ada pesan khusus dari API, Anda bisa menampilkannya di toast juga,
+      // atau gunakan Modal AntD jika pesannya perlu konfirmasi/lebih panjang.
+      // Karena Anda ingin menggunakan Toastify, saya ganti Modal.success dengan toast.success.
+      /*
       Modal.success({
         title: "Pembaruan Semester Berhasil",
         content: (
@@ -280,18 +298,20 @@ const AcademicYearPage: React.FC = () => {
           </div>
         ),
       });
+      */
 
       // 5. Sinkronisasi: Ambil data terbaru dari server
       fetchAcademicYears();
     } catch (error) {
       console.error(`Gagal update status ${type}:`, error);
-      message.error(`Gagal mengubah status semester. Mengambil ulang data...`);
+      // Ganti message.error dengan toast.error
+      toast.error(`Gagal mengubah status semester. Mengambil ulang data...`);
       // Revert Update jika gagal
       fetchAcademicYears();
     }
   };
 
-  // --- DEFINISI KOLOM TABLE ---
+  // --- DEFINISI KOLOM TABLE (Tidak ada perubahan) ---
   const columns = [
     {
       title: "Academic Year",
@@ -356,6 +376,21 @@ const AcademicYearPage: React.FC = () => {
 
   return (
     <>
+      {/* Tambahkan ToastContainer di root component */}
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
+      {/* ToastContainer wajib ditambahkan agar notifikasi muncul */}
+
       <Breadcrumb items={[{ title: "Home" }, { title: "Academic Year" }]} />
 
       <Title level={1} style={{ margin: "16px 0 24px 0" }}>

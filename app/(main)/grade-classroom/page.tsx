@@ -12,7 +12,8 @@ import {
   Modal,
   Form,
   Select,
-  notification,
+  // 💡 Hapus Ant Design notification
+  // notification,
 } from "antd";
 import {
   SearchOutlined,
@@ -22,6 +23,10 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
+// 💡 Import React Toastify
+import { ToastContainer, toast } from "react-toastify";
+// 💡 Pastikan Anda mengimpor CSS ini di file root/layout Anda:
+// import 'react-toastify/dist/ReactToastify.css';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -96,9 +101,9 @@ const GradeClassroomPage: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to fetch classrooms:", error);
-      notification.error({
-        message: "Gagal Memuat Data",
-        description: "Terjadi kesalahan saat mengambil data kelas.",
+      // 💡 Ganti Ant Design notification.error dengan toast.error
+      toast.error("Terjadi kesalahan saat mengambil data kelas.", {
+        position: "top-right",
       });
     } finally {
       setLoading(false);
@@ -135,6 +140,10 @@ const GradeClassroomPage: React.FC = () => {
     setLoading(true);
     try {
       let response;
+      const successMessage = editingClassroom
+        ? "Classroom berhasil diupdate!"
+        : "Classroom berhasil ditambahkan!";
+
       if (editingClassroom) {
         // PUT (Edit)
         const url = `${BASE_URL}/classrooms/${editingClassroom.id}`;
@@ -145,9 +154,9 @@ const GradeClassroomPage: React.FC = () => {
         response = await axios.post(url, values);
       }
 
-      notification.success({
-        message: editingClassroom ? "Update Berhasil" : "Tambah Berhasil",
-        description: response.data.message,
+      // 💡 Ganti Ant Design notification.success dengan toast.success
+      toast.success(successMessage, {
+        position: "top-right",
       });
 
       handleCloseModal();
@@ -155,11 +164,12 @@ const GradeClassroomPage: React.FC = () => {
     } catch (error: any) {
       const errorMessage =
         error.response?.data?.message ||
-        "Terjadi kesalahan yang tidak diketahui.";
+        "Terjadi kesalahan yang tidak diketahui saat menyimpan data.";
       console.error("API Error:", error);
-      notification.error({
-        message: editingClassroom ? "Gagal Update" : "Gagal Tambah",
-        description: errorMessage,
+
+      // 💡 Ganti Ant Design notification.error dengan toast.error
+      toast.error(errorMessage, {
+        position: "top-right",
       });
     } finally {
       setLoading(false);
@@ -238,6 +248,9 @@ const GradeClassroomPage: React.FC = () => {
 
   return (
     <>
+      {/* 💡 Tambahkan ToastContainer di root komponen Anda */}
+      <ToastContainer />
+
       {/* 1. Breadcrumb */}
       <Breadcrumb items={[{ title: "Home" }, { title: "Grade & Classroom" }]} />
 
