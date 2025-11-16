@@ -1,7 +1,6 @@
-// app/(main)/master-data/grade-classroom/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Breadcrumb,
   Typography,
@@ -10,6 +9,10 @@ import {
   Button,
   Space,
   Pagination,
+  Modal,
+  Form,
+  Select,
+  notification,
 } from "antd";
 import {
   SearchOutlined,
@@ -18,104 +21,227 @@ import {
   EditOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
+import axios from "axios";
 
 const { Title } = Typography;
+const { Option } = Select;
 
-// --- DUMMY DATA ---
-interface ClassroomData {
-  key: string;
-  grade: number;
-  sections: string;
-  classroomName: string;
-  code: string;
+// Ambil BASE_URL dari environment variable
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "https://so-api.queensland.id/api";
+
+// --- Definisi Tipe Data (Interfaces) ---
+
+interface AcademicYear {
+  id: number;
+  year: string;
+  is_active: boolean;
 }
 
-const dummyData: ClassroomData[] = [
-  {
-    key: "1",
-    grade: 1,
-    sections: "A",
-    classroomName: "Abdullah Bin Muhammad",
-    code: "P1A",
-  },
-  {
-    key: "2",
-    grade: 1,
-    sections: "B",
-    classroomName: "Aminah binti Wahb",
-    code: "P1B",
-  },
-  {
-    key: "3",
-    grade: 2,
-    sections: "A",
-    classroomName: "Hamzah bin Abdul Muttalib",
-    code: "P2A",
-  },
-  {
-    key: "4",
-    grade: 2,
-    sections: "A",
-    classroomName: "Hamzah bin Abdul Muttalib",
-    code: "P2A", // Contoh duplikasi di data dummy
-  },
-  {
-    key: "5",
-    grade: 3,
-    sections: "B",
-    classroomName: "Ali bin Abi Thalib",
-    code: "P3B",
-  },
-];
+interface Classroom {
+  id: number;
+  grade: string;
+  section: string;
+  class_name: string;
+  code: string;
+  academic_id: number;
+  academic_year: AcademicYear;
+  key: string; // Diperlukan Ant Design Table
+}
 
-// --- DEFINISI KOLOM TABLE ---
-const columns = [
-  {
-    title: "Grade",
-    dataIndex: "grade",
-    key: "grade",
-    sorter: (a: ClassroomData, b: ClassroomData) => a.grade - b.grade,
-  },
-  {
-    title: "Sections",
-    dataIndex: "sections",
-    key: "sections",
-  },
-  {
-    title: "Classroom Name",
-    dataIndex: "classroomName",
-    key: "classroomName",
-    sorter: (a: ClassroomData, b: ClassroomData) =>
-      a.classroomName.localeCompare(b.classroomName),
-  },
-  {
-    title: "Code",
-    dataIndex: "code",
-    key: "code",
-  },
-  {
-    title: "Actions",
-    key: "actions",
-    render: () => (
-      <Button
-        type="text"
-        icon={<EditOutlined style={{ color: "#1890ff" }} />}
-      />
-    ),
-  },
-];
+interface ClassroomFormValues {
+  grade: string;
+  section: string;
+  class_name: string;
+}
+
+// Data Pilihan untuk Form (sesuai kebutuhan tipikal)
+const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 
 const GradeClassroomPage: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState(6); // Default ke halaman 6, seperti di gambar
-  const totalRecords = 500; // Asumsi ada 500 total record seperti di pagination
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [activeAcademicYear, setActiveAcademicYear] = useState<string>(
+    "Tahun Akademik Tidak Ditemukan"
+  );
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingClassroom, setEditingClassroom] = useState<Classroom | null>(
+    null
+  );
+  const [form] = Form.useForm<ClassroomFormValues>();
+
+  // State untuk Pagination (tetap pertahankan tampilan seperti permintaan)
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalRecords = 500;
   const pageSize = 10;
+
+  // --- Fungsi API Calls ---
+
+  const fetchClassrooms = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${BASE_URL}/classrooms`);
+      const data: Classroom[] = response.data.map((item: Classroom) => ({
+        ...item,
+        key: item.id.toString(), // Tambahkan key untuk Table Ant Design
+      }));
+
+      setClassrooms(data);
+
+      // 2. Tampilkan Tahun Akademik Aktif
+      if (data.length > 0 && data[0].academic_year?.year) {
+        setActiveAcademicYear(data[0].academic_year.year);
+      }
+    } catch (error) {
+      console.error("Failed to fetch classrooms:", error);
+      notification.error({
+        message: "Gagal Memuat Data",
+        description: "Terjadi kesalahan saat mengambil data kelas.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchClassrooms();
+  }, [fetchClassrooms]);
+
+  // --- Modal dan Form Handlers ---
+
+  const handleOpenModal = (classroom: Classroom | null = null) => {
+    setEditingClassroom(classroom);
+    setIsModalOpen(true);
+    if (classroom) {
+      form.setFieldsValue({
+        grade: classroom.grade,
+        section: classroom.section,
+        class_name: classroom.class_name,
+      });
+    } else {
+      form.resetFields();
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingClassroom(null);
+    form.resetFields();
+  };
+
+  const onFinish = async (values: ClassroomFormValues) => {
+    setLoading(true);
+    try {
+      let response;
+      if (editingClassroom) {
+        // PUT (Edit)
+        const url = `${BASE_URL}/classrooms/${editingClassroom.id}`;
+        response = await axios.put(url, values);
+      } else {
+        // POST (Add)
+        const url = `${BASE_URL}/classrooms`;
+        response = await axios.post(url, values);
+      }
+
+      notification.success({
+        message: editingClassroom ? "Update Berhasil" : "Tambah Berhasil",
+        description: response.data.message,
+      });
+
+      handleCloseModal();
+      fetchClassrooms(); // Refresh data
+    } catch (error: any) {
+      const errorMessage =
+        error.response?.data?.message ||
+        "Terjadi kesalahan yang tidak diketahui.";
+      console.error("API Error:", error);
+      notification.error({
+        message: editingClassroom ? "Gagal Update" : "Gagal Tambah",
+        description: errorMessage,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 💡 FUNGSI VALIDASI KUSTOM UNTUK MENCEGAH DUPLIKAT GRADE & SECTION
+  const validateDuplicateClassroom = async () => {
+    const values = form.getFieldsValue();
+    const { grade, section } = values;
+
+    if (!grade || !section) {
+      // Biarkan validasi 'required' default yang menangani
+      return Promise.resolve();
+    }
+
+    // Cek apakah ada kombinasi yang sama di data yang sudah ada (classrooms)
+    const isDuplicate = classrooms.some((classroom) => {
+      // Jika dalam mode Edit, izinkan edit pada kelas yang sedang diedit (dengan ID yang sama)
+      if (editingClassroom && classroom.id === editingClassroom.id) {
+        return false;
+      }
+      return classroom.grade === grade && classroom.section === section;
+    });
+
+    if (isDuplicate) {
+      // Tolak Promise untuk menampilkan pesan error di form
+      return Promise.reject(
+        new Error(`Kombinasi Grade ${grade} dan Section ${section} sudah ada.`)
+      );
+    }
+
+    // Lanjutkan jika tidak ada duplikat
+    return Promise.resolve();
+  };
+
+  // --- Definisi Kolom Table (Diperbarui) ---
+  const columns = [
+    {
+      title: "Grade",
+      dataIndex: "grade",
+      key: "grade",
+      sorter: (a: Classroom, b: Classroom) => a.grade.localeCompare(b.grade),
+    },
+    {
+      title: "Section",
+      dataIndex: "section",
+      key: "section",
+    },
+    {
+      title: "Classroom Name",
+      dataIndex: "class_name",
+      key: "class_name",
+      sorter: (a: Classroom, b: Classroom) =>
+        a.class_name.localeCompare(b.class_name),
+    },
+    {
+      title: "Code",
+      dataIndex: "code",
+      key: "code",
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_: any, record: Classroom) => (
+        <Button
+          type="text"
+          icon={<EditOutlined style={{ color: "#1890ff" }} />}
+          onClick={() => handleOpenModal(record)}
+        >
+          Edit
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <>
       {/* 1. Breadcrumb */}
       <Breadcrumb items={[{ title: "Home" }, { title: "Grade & Classroom" }]} />
 
-      {/* 2. Title dan Tahun Akademik */}
+      {/* 2. Title dan Tahun Akademik (DYNAMIC) */}
       <div
         style={{
           display: "flex",
@@ -127,8 +253,9 @@ const GradeClassroomPage: React.FC = () => {
         <Title level={1} style={{ margin: 0 }}>
           Grade & Classroom
         </Title>
+        {/* Tampilkan Tahun Akademik Aktif di pojok kanan atas */}
         <Title level={3} style={{ color: "#888", margin: 0 }}>
-          2024-2025
+          <span className="font-bold text-zinc-800">{activeAcademicYear}</span>
         </Title>
       </div>
 
@@ -141,7 +268,7 @@ const GradeClassroomPage: React.FC = () => {
         }}
       >
         <Input
-          placeholder="Search customer 100 records..."
+          placeholder="Search classroom records..."
           prefix={<SearchOutlined />}
           style={{ width: 300 }}
         />
@@ -149,22 +276,27 @@ const GradeClassroomPage: React.FC = () => {
           <Button
             type="primary"
             icon={<UploadOutlined />}
-            style={{ background: "#52c41a", borderColor: "#52c41a" }}
+            style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
           >
             Mass Upload
           </Button>
-          <Button type="primary" icon={<PlusOutlined />}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => handleOpenModal(null)}
+          >
             Add Classroom
           </Button>
           <Button icon={<DownloadOutlined />} />
         </Space>
       </div>
 
-      {/* 4. Table */}
+      {/* 4. Table (Menggunakan data API) */}
       <Table
         columns={columns}
-        dataSource={dummyData}
-        pagination={false} // Matikan pagination bawaan Antd
+        dataSource={classrooms}
+        loading={loading}
+        pagination={false}
         size="large"
         style={{ border: "1px solid #f0f0f0", borderRadius: "4px" }}
       />
@@ -178,7 +310,7 @@ const GradeClassroomPage: React.FC = () => {
           marginTop: "16px",
         }}
       >
-        {/* Row per page & Go to */}
+        {/* Row per page & Go to (Dibiarkan statis karena tidak ada implementasi backend pagination) */}
         <Space>
           <span>Row per page</span>
           <Input defaultValue="10" style={{ width: 60, textAlign: "center" }} />
@@ -186,6 +318,7 @@ const GradeClassroomPage: React.FC = () => {
           <Input
             defaultValue={currentPage}
             style={{ width: 50, textAlign: "center" }}
+            onChange={(e) => setCurrentPage(parseInt(e.target.value) || 1)}
           />
         </Space>
 
@@ -199,6 +332,83 @@ const GradeClassroomPage: React.FC = () => {
           showSizeChanger={false}
         />
       </div>
+
+      {/* --- Modal Tambah/Edit Kelas --- */}
+      <Modal
+        title={editingClassroom ? "Edit Classroom" : "Add New Classroom"}
+        open={isModalOpen}
+        onCancel={handleCloseModal}
+        footer={[
+          <Button key="back" onClick={handleCloseModal}>
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={loading}
+            onClick={() => form.submit()}
+          >
+            {editingClassroom ? "Update Classroom" : "Add Classroom"}
+          </Button>,
+        ]}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={onFinish}
+          initialValues={{ grade: "1", section: "A" }}
+          className="mt-4"
+        >
+          <Form.Item
+            name="class_name"
+            label="Classroom Name"
+            rules={[
+              { required: true, message: "Please input the Classroom Name!" },
+            ]}
+          >
+            <Input placeholder="e.g., Aminah binti Wahb" />
+          </Form.Item>
+
+          <Form.Item label="Grade and Section" required>
+            <Input.Group compact>
+              <Form.Item
+                name="grade"
+                noStyle
+                // 💡 Tambahkan custom validator di sini
+                rules={[
+                  { required: true, message: "Select Grade" },
+                  { validator: validateDuplicateClassroom },
+                ]}
+              >
+                <Select style={{ width: "40%" }} placeholder="Select Grade">
+                  {GRADE_OPTIONS.map((grade) => (
+                    <Option key={grade} value={grade}>
+                      {grade}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+              <Form.Item
+                name="section"
+                noStyle
+                // 💡 Tambahkan custom validator di sini
+                rules={[
+                  { required: true, message: "Select Section" },
+                  { validator: validateDuplicateClassroom },
+                ]}
+              >
+                <Select style={{ width: "60%" }} placeholder="Select Section">
+                  {SECTION_OPTIONS.map((section) => (
+                    <Option key={section} value={section}>
+                      Section {section}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Input.Group>
+          </Form.Item>
+        </Form>
+      </Modal>
     </>
   );
 };
