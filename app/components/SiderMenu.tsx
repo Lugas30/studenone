@@ -85,18 +85,18 @@ const items: MenuItem[] = [
     children: [
       {
         // URL diubah dari /master-data/personnel/principal menjadi /personnel/principal
-        key: "/personnel/principal",
-        label: <Link href="/personnel/principal">Principal</Link>,
+        key: "/head-of-unit",
+        label: <Link href="/head-of-unit">Head of Unit</Link>,
       },
       {
         // URL diubah dari /master-data/personnel/teachers menjadi /personnel/teachers
-        key: "/personnel/teachers",
-        label: <Link href="/personnel/teachers">Teachers</Link>,
+        key: "/teachers",
+        label: <Link href="/teachers">Teachers</Link>,
       },
       {
         // URL diubah dari /master-data/personnel/students menjadi /personnel/students
-        key: "/personnel/students",
-        label: <Link href="/personnel/students">Students</Link>,
+        key: "/students",
+        label: <Link href="/students">Students</Link>,
       },
     ],
   },
