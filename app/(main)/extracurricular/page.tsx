@@ -47,8 +47,14 @@ interface ExtracurricularData {
   is_active: boolean;
   created_at: string;
   updated_at: string;
-  academic_year: AcademicYear;
+  // academic_year: AcademicYear; // Hapus academic_year di sini karena data API baru tidak membutuhkannya
   key: string;
+}
+
+// 💡 Interface baru untuk respons API (sekarang memiliki properti tingkat atas)
+interface ExtracurricularApiResponse {
+  academicYear: string;
+  data: ExtracurricularData[];
 }
 
 // --- Komponen Form Add/Edit Modal (Re-usable) ---
@@ -175,12 +181,14 @@ interface DetailModalProps {
   data: ExtracurricularData | null;
   isVisible: boolean;
   onClose: () => void;
+  academicYear: string; // Tambahkan prop tahun akademik
 }
 
 const DetailModal: React.FC<DetailModalProps> = ({
   data,
   isVisible,
   onClose,
+  academicYear, // Gunakan prop tahun akademik
 }) => {
   if (!data) return null;
 
@@ -213,7 +221,8 @@ const DetailModal: React.FC<DetailModalProps> = ({
         <Title level={5} style={{ marginTop: 16, marginBottom: 8 }}>
           Academic Year
         </Title>
-        <Text strong>Year:</Text> <Text>{data.academic_year.year}</Text>
+        {/* 💡 PERUBAHAN: Tampilkan tahun akademik dari state utama */}
+        <Text strong>Year:</Text> <Text>{academicYear}</Text>
       </Space>
     </Modal>
   );
@@ -234,34 +243,41 @@ const ExtracurricularPage: React.FC = () => {
   const [isFormModalVisible, setIsFormModalVisible] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false); // Mode untuk Add/Edit
   const [searchTerm, setSearchTerm] = useState("");
+  // 💡 PERUBAHAN: State untuk menyimpan tahun akademik dari properti tingkat atas
   const [currentAcademicYear, setCurrentAcademicYear] = useState("Loading...");
 
   // --- 1. Fetch Data (GET) ---
   const fetchData = useCallback(async () => {
     if (!API_URL) {
       toast.error("API URL is not configured in .env");
+      setCurrentAcademicYear("Error");
       return;
     }
 
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/extracurriculars`);
-      const mappedData: ExtracurricularData[] = response.data.map(
-        (item: any) => ({
+      // 💡 PERUBAHAN: Mendefinisikan tipe respons sebagai ExtracurricularApiResponse
+      const response = await axios.get<ExtracurricularApiResponse>(
+        `${API_URL}/extracurriculars`
+      );
+
+      const apiData = response.data.data;
+      const academicYear = response.data.academicYear;
+
+      const mappedData: ExtracurricularData[] = apiData.map(
+        (item: ExtracurricularData) => ({
           ...item,
           key: item.id.toString(),
         })
       );
       setData(mappedData);
 
-      if (mappedData.length > 0) {
-        setCurrentAcademicYear(mappedData[0].academic_year.year);
-      } else {
-        setCurrentAcademicYear("N/A");
-      }
+      // 💡 PERUBAHAN: Mengambil tahun akademik dari properti tingkat atas
+      setCurrentAcademicYear(academicYear || "N/A");
     } catch (error) {
       toast.error("Failed to fetch extracurricular data.");
       console.error("Error fetching data:", error);
+      setCurrentAcademicYear("Error Loading Year");
     } finally {
       setLoading(false);
     }
@@ -490,7 +506,8 @@ const ExtracurricularPage: React.FC = () => {
           Extracurricular
         </Title>
         <Title level={3} style={{ color: "#888", margin: 0 }}>
-          {currentAcademicYear}
+          {/* 💡 Tampilkan state tahun akademik dari properti tingkat atas */}
+          <span className="font-bold text-zinc-800">{currentAcademicYear}</span>
         </Title>
       </div>
 
@@ -539,6 +556,7 @@ const ExtracurricularPage: React.FC = () => {
         data={selectedItem}
         isVisible={isDetailModalVisible}
         onClose={handleCloseDetailModal}
+        academicYear={currentAcademicYear} // 💡 LEWATKAN TAHUN AKADEMIK
       />
 
       {/* 6. Modal Form Add/Edit */}

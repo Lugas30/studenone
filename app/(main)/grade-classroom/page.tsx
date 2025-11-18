@@ -32,8 +32,7 @@ const { Title } = Typography;
 const { Option } = Select;
 
 // Ambil BASE_URL dari environment variable
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://so-api.queensland.id/api";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // --- Definisi Tipe Data (Interfaces) ---
 
@@ -54,6 +53,12 @@ interface Classroom {
   key: string; // Diperlukan Ant Design Table
 }
 
+// 💡 Interface untuk struktur respons API baru
+interface ApiResponse {
+  academicYear: string;
+  data: Classroom[];
+}
+
 interface ClassroomFormValues {
   grade: string;
   section: string;
@@ -67,9 +72,8 @@ const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 const GradeClassroomPage: React.FC = () => {
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeAcademicYear, setActiveAcademicYear] = useState<string>(
-    "Tahun Akademik Tidak Ditemukan"
-  );
+  const [activeAcademicYear, setActiveAcademicYear] =
+    useState<string>("Loading...");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClassroom, setEditingClassroom] = useState<Classroom | null>(
@@ -87,17 +91,27 @@ const GradeClassroomPage: React.FC = () => {
   const fetchClassrooms = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${BASE_URL}/classrooms`);
-      const data: Classroom[] = response.data.map((item: Classroom) => ({
+      const response = await axios.get<ApiResponse>(`${BASE_URL}/classrooms`);
+
+      // 1. Ambil tahun akademik dari properti tingkat atas
+      const { academicYear, data } = response.data;
+
+      const formattedData: Classroom[] = data.map((item: Classroom) => ({
         ...item,
         key: item.id.toString(), // Tambahkan key untuk Table Ant Design
       }));
 
-      setClassrooms(data);
+      setClassrooms(formattedData);
 
-      // 2. Tampilkan Tahun Akademik Aktif
-      if (data.length > 0 && data[0].academic_year?.year) {
-        setActiveAcademicYear(data[0].academic_year.year);
+      // 2. Tampilkan Tahun Akademik Aktif dari properti tingkat atas
+      if (academicYear) {
+        setActiveAcademicYear(academicYear);
+      } else if (
+        formattedData.length > 0 &&
+        formattedData[0].academic_year?.year
+      ) {
+        // Fallback: jika properti academicYear tidak ada, gunakan dari item pertama
+        setActiveAcademicYear(formattedData[0].academic_year.year);
       }
     } catch (error) {
       console.error("Failed to fetch classrooms:", error);

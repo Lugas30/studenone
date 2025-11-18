@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import dayjs from "dayjs";
+// Mengganti import dayjs dengan moment
+import moment from "moment";
+// moment biasanya tidak perlu diimpor secara spesifik seperti 'dayjs',
+// namun beberapa setup Next.js/Webpack mungkin memerlukannya.
+// Jika menggunakan Ant Design DatePicker, pastikan juga sudah ada 'moment' atau 'dayjs' yang di-alias.
+
 import {
   Card,
   Button,
@@ -76,11 +81,11 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
   useEffect(() => {
     if (isVisible) {
       if (initialData) {
-        // Isi form dengan data yang ada, konversi tanggal
+        // PERUBAHAN: Menggunakan moment() untuk inisialisasi DatePicker
         form.setFieldsValue({
           ...initialData,
           date_of_birth: initialData.date_of_birth
-            ? dayjs(initialData.date_of_birth)
+            ? moment(initialData.date_of_birth) // Mengganti dayjs(string) menjadi moment(string)
             : null,
           signature: [], // Kosongkan file list untuk signature
         });
@@ -96,17 +101,21 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
     const formData = new FormData();
 
     // Mapping fields ke format API
-    formData.append("academic_year_id", values.academic_year_id || "1"); // Asumsi ID tahun ajaran
+    // Pastikan academic_year_id dikirim (default "1" jika tidak ada)
+    formData.append("academic_year_id", values.academic_year_id || "1");
     formData.append("name", values.name);
     formData.append("nip", values.nip);
     formData.append("contact", values.contact || "");
     formData.append("email", values.email || "");
+
+    // PERUBAHAN: Menggunakan .format("YYYY-MM-DD") dari objek moment
     formData.append(
       "date_of_birth",
       values.date_of_birth
-        ? dayjs(values.date_of_birth).format("YYYY-MM-DD")
+        ? values.date_of_birth.format("YYYY-MM-DD") // Mengganti dayjs().format() menjadi moment().format()
         : ""
     );
+
     formData.append("responsibility_area", values.responsibility_area);
     formData.append("gender", values.gender);
 
@@ -123,19 +132,15 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
         await axios.post(
           `${HEAD_OF_UNITS_ENDPOINT}/${initialData?.id}`,
           formData,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          }
+          // Header Content-Type Dihapus (Perbaikan Masalah Postman)
+          {}
         );
         toast.success("Data Head of Unit berhasil diperbarui!");
       } else {
         // API POST untuk Create (menggunakan form-data)
         await axios.post(HEAD_OF_UNITS_ENDPOINT, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
+          // Header Content-Type Dihapus (Perbaikan Masalah Postman)
+          // Biarkan browser/axios yang mengatur Content-Type dengan boundary
         });
         toast.success("Data Head of Unit berhasil ditambahkan!");
       }
@@ -336,15 +341,13 @@ const HeadOfUnitsView: React.FC = () => {
       <div
         style={{
           display: "flex",
+          flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
           height: "100vh",
         }}
       >
-        <Spin
-          indicator={<LoadingOutlined style={{ fontSize: 40 }} spin />}
-          tip="Memuat data..."
-        />
+        <Spin indicator={<LoadingOutlined style={{ fontSize: 40 }} spin />} />
       </div>
     );
   }
@@ -387,7 +390,7 @@ const HeadOfUnitsView: React.FC = () => {
                   icon={<UploadOutlined />}
                   onClick={handleCreate}
                 >
-                  **Upload Data**
+                  Upload Data
                 </Button>
               )}
             </div>
@@ -396,7 +399,7 @@ const HeadOfUnitsView: React.FC = () => {
 
         {/* Card View Data */}
         <Card
-          bordered={false}
+          variant="outlined"
           style={{ boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)" }}
         >
           <Title
@@ -418,7 +421,8 @@ const HeadOfUnitsView: React.FC = () => {
                   label="Tanggal Lahir"
                   value={
                     data.date_of_birth
-                      ? dayjs(data.date_of_birth).format("DD MMMM YYYY")
+                      ? // PERUBAHAN: Menggunakan moment().format() untuk display
+                        moment(data.date_of_birth).format("DD MMMM YYYY")
                       : "-"
                   }
                 />

@@ -52,25 +52,47 @@ interface PIDData {
   key: string;
 }
 
+// 💡 Interface baru untuk respons API (sesuai permintaan)
+interface PredicateApiResponse {
+  academicYear: string;
+  data: (KKTPData | (PIDData & { academic_year?: any }))[];
+}
+
 type TableDataType = KKTPData | PIDData;
 
 // --- FUNGSI UTILITY API ---
 
-const fetchData = async (url: string): Promise<any[]> => {
+// 💡 PERUBAHAN: Sekarang fetchData mengembalikan objek respons penuh
+const fetchData = async (url: string): Promise<PredicateApiResponse | null> => {
   try {
-    const response = await axios.get(url);
-    return response.data.map((item: any) => ({
-      ...item,
-      key: item.id.toString(),
-      // Mapping untuk kolom tabel
-      minValue: item.min_value,
-      maxValue: item.max_value,
-    }));
+    const response = await axios.get<PredicateApiResponse>(url);
+
+    // Periksa apakah respons adalah objek dengan properti 'data'
+    if (response.data && Array.isArray(response.data.data)) {
+      // Lakukan mapping pada array 'data'
+      const mappedData = response.data.data.map((item: any) => ({
+        ...item,
+        key: item.id.toString(),
+        // Mapping untuk kolom tabel
+        minValue: item.min_value,
+        maxValue: item.max_value,
+      }));
+
+      // Kembalikan objek penuh, tetapi dengan data yang sudah di-map
+      return {
+        academicYear: response.data.academicYear,
+        data: mappedData,
+      };
+    }
+
+    // Jika format respons tidak seperti yang diharapkan, kembalikan null atau throw error
+    console.warn(`Response from ${url} did not contain expected 'data' array.`);
+    return null;
   } catch (error) {
     console.error(`Error fetching data from ${url}:`, error);
     // ✨ Mengganti message.error (Ant Design) menjadi toast.error (react-toastify)
     toast.error("Gagal memuat data. Cek console untuk detail.");
-    return [];
+    return null;
   }
 };
 
@@ -342,25 +364,32 @@ const PredicateKKTPPage: React.FC = () => {
   // Fungsi untuk memuat semua data
   const loadAllData = useCallback(async () => {
     setLoading(true);
-    const [kktp, quran, pid] = await Promise.all([
+
+    // 💡 PERUBAHAN: Memanggil fetchData dan menyimpan objek penuh
+    const [kktpResponse, quranResponse, pidResponse] = await Promise.all([
       fetchData(PREDICATE_KKTP_URL),
       fetchData(PREDICATE_KKTP_QURAN_URL),
       fetchData(PREDICATE_RANGE_PID_URL),
     ]);
 
-    setKktpData(kktp as KKTPData[]);
-    setQuransData(quran as KKTPData[]);
-    setPidData(pid as PIDData[]);
+    // Mengatur data tabel
+    setKktpData((kktpResponse?.data as KKTPData[]) || []);
+    setQuransData((quranResponse?.data as KKTPData[]) || []);
+    setPidData((pidResponse?.data as PIDData[]) || []);
 
-    if (
-      kktp.length > 0 &&
-      (kktp[0] as KKTPData & { academic_year: any }).academic_year
-    ) {
-      setAcademicYear(
-        (kktp[0] as KKTPData & { academic_year: any }).academic_year.year
-      );
+    // 💡 PERUBAHAN: Mengambil Tahun Akademik dari respons pertama yang berhasil
+    const yearFromKktp = kktpResponse?.academicYear;
+    const yearFromQuran = quranResponse?.academicYear;
+    const yearFromPid = pidResponse?.academicYear;
+
+    if (yearFromKktp) {
+      setAcademicYear(yearFromKktp);
+    } else if (yearFromQuran) {
+      setAcademicYear(yearFromQuran);
+    } else if (yearFromPid) {
+      setAcademicYear(yearFromPid);
     } else {
-      setAcademicYear("Data Tidak Tersedia");
+      setAcademicYear("Tahun Akademik Tidak Tersedia");
     }
 
     setLoading(false);
@@ -479,7 +508,7 @@ const PredicateKKTPPage: React.FC = () => {
           Predicate KKTP
         </Title>
         <Title level={3} style={{ color: "#888", margin: 0 }}>
-          {academicYear}
+          <span className="font-bold text-zinc-800">{academicYear}</span>
         </Title>
       </div>
 

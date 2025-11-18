@@ -264,7 +264,9 @@ const StudentList: React.FC = () => {
   const [data, setData] = useState<Student[]>([]);
   const [initialData, setInitialData] = useState<Student[]>([]);
   const [loading, setLoading] = useState(false);
-  const [academicYear, setAcademicYear] = useState("Loading...");
+
+  // ✅ PERUBAHAN SUMBER DATA TAHUN AKADEMIK (DIUBAH MENJADI STATIS "2024-2025")
+  const [academicYear, setAcademicYear] = useState("2024-2025");
 
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
   const [isFormModalVisible, setIsFormModalVisible] = useState(false);
@@ -288,12 +290,15 @@ const StudentList: React.FC = () => {
       }));
       setData(processedData);
       setInitialData(processedData);
-      setAcademicYear(
+
+      // ❌ Baris berikut dikomentari/dihapus agar academicYear menggunakan nilai statis di atas
+      /* setAcademicYear(
         processedData.length > 0 ? processedData[0].academic_year.year : "N/A"
       );
+      */
     } catch (error) {
       console.error("Error fetching students:", error);
-      toast.error("Gagal mengambil data siswa.");
+      // toast.error("Gagal mengambil data siswa.");
     } finally {
       setLoading(false);
     }
@@ -579,7 +584,7 @@ const StudentList: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: "20px" }}>
+    <div>
       {/* Container Toastify */}
       <ToastContainer
         position="top-right"
@@ -598,14 +603,6 @@ const StudentList: React.FC = () => {
         <Breadcrumb items={breadcrumbItems} />
       </div>
 
-      <hr
-        style={{
-          border: "none",
-          borderTop: "1px solid #f0f0f0",
-          margin: "15px 0",
-        }}
-      />
-
       {/* Header */}
       <div
         style={{
@@ -615,21 +612,13 @@ const StudentList: React.FC = () => {
           marginBottom: "10px",
         }}
       >
-        <Title level={2} style={{ margin: 0 }}>
+        <Title level={1} style={{ margin: 0 }}>
           Student List
         </Title>
         <Title level={3} style={{ margin: 0 }}>
-          {academicYear}
+          {academicYear} {/* Menampilkan Tahun Akademik Statis */}
         </Title>
       </div>
-
-      <hr
-        style={{
-          border: "none",
-          borderTop: "1px solid #f0f0f0",
-          margin: "15px 0",
-        }}
-      />
 
       {/* Control Bar: Search dan Buttons */}
       <div

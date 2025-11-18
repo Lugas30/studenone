@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Key } from "react";
+import React, { useState, useEffect, Key, useCallback } from "react";
 import axios, { AxiosError } from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -19,7 +19,6 @@ import {
   Row,
   Col,
   Upload,
-  message,
 } from "antd";
 import {
   SearchOutlined,
@@ -56,9 +55,7 @@ interface Teacher {
   is_active: boolean;
   signature: string | null;
   note: string | null;
-  academic_year: {
-    year: string;
-  };
+  // academic_year dihilangkan di sini
 }
 
 // Tipe data untuk form
@@ -76,6 +73,13 @@ interface TeacherFormValues {
   is_active: boolean;
   note?: string | null;
   signature?: any; // Menggunakan any untuk menampung format Upload AntD (fileList)
+}
+
+// 💡 Interface baru untuk respons API
+interface TeacherApiResponse {
+  academicYear: string;
+  data: Teacher[];
+  total: number;
 }
 
 // Ambil URL dari .env
@@ -148,11 +152,11 @@ const getColumns = (
           style={{ color: "#faad14" }}
         />
         <Popconfirm
-          title="Hapus Guru"
-          description={`Yakin ingin menghapus ${record.name}?`}
+          title="Delete Teacher"
+          description={`Are you sure you want to delete ${record.name}?`}
           onConfirm={() => handleDelete(record.id)}
-          okText="Ya, Hapus"
-          cancelText="Batal"
+          okText="Yes, Delete"
+          cancelText="Cancel"
         >
           <Button icon={<DeleteOutlined />} type="text" danger />
         </Popconfirm>
@@ -162,7 +166,260 @@ const getColumns = (
 ];
 
 // ===================================
-// 3. MAIN COMPONENT
+// 3. FORM MODAL COMPONENT
+// ===================================
+
+interface FormModalProps {
+  isVisible: boolean;
+  onClose: () => void;
+  onFinish: (values: TeacherFormValues) => void;
+  initialValues: Teacher | null;
+  isEditing: boolean;
+}
+
+const normFile = (e: any) => {
+  if (Array.isArray(e)) {
+    return e;
+  }
+  return e?.fileList;
+};
+
+const TeacherFormModal: React.FC<FormModalProps> = ({
+  isVisible,
+  onClose,
+  onFinish,
+  initialValues,
+  isEditing,
+}) => {
+  const [form] = Form.useForm<TeacherFormValues>();
+
+  useEffect(() => {
+    if (isVisible) {
+      if (initialValues) {
+        // Edit mode: set values
+        form.setFieldsValue({
+          ...initialValues,
+          join_date: moment(initialValues.join_date),
+          nuptk: initialValues.nuptk || undefined,
+          note: initialValues.note || undefined,
+          // Kosongkan password dan signature saat edit, agar user upload jika ingin ganti
+          password: undefined,
+          signature: undefined,
+        });
+      } else {
+        // Add mode: reset and set defaults
+        form.resetFields();
+        form.setFieldsValue({
+          academic_year_id: 1,
+          gender: "male",
+          is_active: true,
+        });
+      }
+    }
+  }, [isVisible, initialValues, form]);
+
+  const uploadProps: UploadProps = {
+    name: "signature",
+    multiple: false,
+    maxCount: 1,
+    listType: "picture",
+    beforeUpload: () => false,
+    accept: ".png,.jpg,.jpeg",
+    action: undefined,
+  };
+
+  const title = isEditing
+    ? `Edit Teacher Information: ${initialValues?.name}`
+    : "Add Teacher Information";
+
+  return (
+    <Modal
+      title={title}
+      open={isVisible}
+      onCancel={onClose}
+      footer={null}
+      destroyOnClose={true} // Gunakan destroyOnClose saat modal ditutup
+      width={700}
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={onFinish}
+        initialValues={{
+          academic_year_id: 1,
+          gender: "male",
+          is_active: true,
+        }}
+      >
+        <Form.Item name="academic_year_id" hidden>
+          <Input type="hidden" />
+        </Form.Item>
+
+        <Row gutter={24}>
+          {/* NIY / NIP & NUPTK */}
+          <Col span={12}>
+            <Form.Item
+              name="nip"
+              label="NIY / NIP"
+              rules={[{ required: true, message: "Please input NIY/NIP!" }]}
+            >
+              <Input placeholder="56625128890086" />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="nuptk" label="NUPTK">
+              <Input placeholder="-" />
+            </Form.Item>
+          </Col>
+
+          {/* Full Name & Join Date */}
+          <Col span={12}>
+            <Form.Item
+              name="name"
+              label="Full Name"
+              rules={[{ required: true, message: "Please input full name!" }]}
+            >
+              <Input placeholder="Budi Santoso" />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="join_date"
+              label="Join Date"
+              rules={[{ required: true, message: "Please select join date!" }]}
+            >
+              <DatePicker
+                style={{ width: "100%" }}
+                format="YYYY-MM-DD"
+                placeholder="Select date"
+              />
+            </Form.Item>
+          </Col>
+
+          {/* Gender & Phone */}
+          <Col span={12}>
+            <Form.Item
+              name="gender"
+              label="Gender"
+              rules={[{ required: true, message: "Please select gender!" }]}
+            >
+              <Select placeholder="L">
+                <Option value="male">L</Option>
+                <Option value="female">P</Option>
+              </Select>
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="phone"
+              label="Phone"
+              rules={[
+                { required: true, message: "Please input phone number!" },
+              ]}
+            >
+              <Input placeholder="087654562622" />
+            </Form.Item>
+          </Col>
+
+          {/* Email Address & Password access */}
+          <Col span={12}>
+            <Form.Item
+              name="email"
+              label="Email Address"
+              rules={[
+                { required: true, message: "Please input email!" },
+                { type: "email", message: "Invalid email format!" },
+              ]}
+            >
+              <Input placeholder="budisantoso@gmail.com" />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="password"
+              label="Password access"
+              rules={
+                !isEditing
+                  ? [{ required: true, message: "Please input password!" }]
+                  : []
+              }
+              help={
+                isEditing
+                  ? "Leave blank to keep the existing password."
+                  : undefined
+              }
+            >
+              <Input.Password placeholder="******" />
+            </Form.Item>
+          </Col>
+
+          {/* Status & Note */}
+          <Col span={12}>
+            <Form.Item
+              name="is_active"
+              label="Status"
+              rules={[{ required: true, message: "Please select status!" }]}
+            >
+              <Select>
+                <Option value={true}>Active</Option>
+                <Option value={false}>Inactive</Option>
+              </Select>
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="note" label="Note (for status Inactive)">
+              <Input placeholder="-" />
+            </Form.Item>
+          </Col>
+
+          {/* Upload Signature (1 kolom penuh) */}
+          <Col span={24}>
+            <Form.Item
+              label="Upload Signature"
+              name="signature"
+              valuePropName="fileList"
+              getValueFromEvent={normFile}
+              extra={
+                isEditing && initialValues?.signature
+                  ? "Signature currently exists. Upload a new one to replace."
+                  : "Upload signature (PNG/JPG)"
+              }
+            >
+              <Upload.Dragger {...uploadProps}>
+                <p className="ant-upload-drag-icon">
+                  <UploadIcon />
+                </p>
+                <p className="ant-upload-text">Upload a File</p>
+                <p className="ant-upload-hint">Drag and drop files here</p>
+              </Upload.Dragger>
+            </Form.Item>
+          </Col>
+
+          {/* Tombol Aksi */}
+          <Col span={24}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginTop: 10,
+              }}
+            >
+              <Button onClick={onClose} style={{ marginRight: 8 }}>
+                Cancel
+              </Button>
+              <Button type="primary" htmlType="submit">
+                {isEditing ? "Update" : "Save"}
+              </Button>
+            </div>
+          </Col>
+        </Row>
+      </Form>
+    </Modal>
+  );
+};
+
+// ===================================
+// 4. MAIN COMPONENT
 // ===================================
 
 const TeachersPage: React.FC = () => {
@@ -171,52 +428,54 @@ const TeachersPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
-  const [form] = Form.useForm<TeacherFormValues>();
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
+  // 💡 PERUBAHAN: State untuk tahun akademik
   const [currentAcademicYear, setCurrentAcademicYear] = useState("Loading...");
 
   // Fetch Data Guru
-  const fetchTeachers = async (page = 1, limit = 10) => {
+  const fetchTeachers = useCallback(async (page = 1, limit = 10) => {
     setLoading(true);
     try {
-      const response = await axios.get<Teacher[]>(BASE_URL);
+      // 💡 PERUBAHAN: Mendefinisikan tipe respons sebagai TeacherApiResponse
+      // Asumsi: Endpoint mendukung paginasi melalui query params
+      const response = await axios.get<TeacherApiResponse>(
+        `${BASE_URL}?page=${page}&limit=${limit}`
+      );
 
-      const mappedData = response.data.map((teacher) => ({
+      const { academicYear, data, total } = response.data;
+
+      const mappedData = data.map((teacher) => ({
         ...teacher,
         key: teacher.id.toString(),
       }));
 
-      if (mappedData.length > 0) {
-        setCurrentAcademicYear(mappedData[0].academic_year.year);
-      } else {
-        setCurrentAcademicYear("N/A");
-      }
+      // 💡 PERUBAHAN: Mengambil tahun akademik dari properti tingkat atas
+      setCurrentAcademicYear(academicYear || "N/A");
 
-      setTotalRecords(mappedData.length);
-      const start = (page - 1) * limit;
-      const end = start + limit;
-      setTeachers(mappedData.slice(start, end));
+      setTotalRecords(total); // Menggunakan total dari API
+      setTeachers(mappedData);
       setCurrentPage(page);
       setPageSize(limit);
     } catch (error) {
       const err = error as AxiosError;
       console.error("Gagal memuat data guru:", err);
-      toast.error(`Gagal memuat data: ${err.message}`, {
+      toast.error(`Failed to load data: ${err.message}`, {
         position: "top-right",
       });
       setTeachers([]);
+      setCurrentAcademicYear("Error Loading Year");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchTeachers(currentPage, pageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchTeachers]);
 
   const handlePageChange = (page: number, size: number) => {
     fetchTeachers(page, size);
@@ -225,22 +484,19 @@ const TeachersPage: React.FC = () => {
   const handleEdit = (teacher: Teacher) => {
     setIsEditing(true);
     setCurrentTeacher(teacher);
-    form.setFieldsValue({
-      ...teacher,
-      join_date: moment(teacher.join_date),
-      is_active: teacher.is_active,
-      // Konversi null menjadi undefined untuk form AntD
-      nuptk: teacher.nuptk || undefined,
-      note: teacher.note || undefined,
-      // Reset signature saat edit agar user upload ulang jika ingin mengubah
-      signature: undefined,
-    });
     setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setCurrentTeacher(null);
   };
 
   // Handler Submit Form (Create/Update)
   const handleFormSubmit = async (values: TeacherFormValues) => {
     const formData = new FormData();
+
+    // Append all basic fields
     formData.append("academic_year_id", values.academic_year_id.toString());
     formData.append("nip", values.nip);
     formData.append("name", values.name);
@@ -250,22 +506,19 @@ const TeachersPage: React.FC = () => {
     formData.append("email", values.email);
     formData.append("is_active", values.is_active ? "1" : "0");
 
+    // Append optional fields only if they exist
     if (values.nuptk) formData.append("nuptk", values.nuptk);
     if (values.note) formData.append("note", values.note);
     if (values.password) formData.append("password", values.password);
 
     // Penanganan File Signature - Mengambil objek file mentah
-    // Menggunakan values.signature[0]?.originFileObj (seperti di kode Head of Unit)
     const signatureFile = values.signature?.[0]?.originFileObj;
-
     if (signatureFile) {
       formData.append("signature", signatureFile);
     }
 
-    // Konfigurasi Header untuk Axios (Diadopsi dari kode Head of Unit yang sukses)
     const axiosConfig = {
       headers: {
-        // Penting: Eksplisit menetapkan Content-Type
         "Content-Type": "multipart/form-data",
       },
     };
@@ -278,21 +531,22 @@ const TeachersPage: React.FC = () => {
         response = await axios.post(
           `${BASE_URL}/${currentTeacher.id}`,
           formData,
-          axiosConfig // Menggunakan config dengan Content-Type eksplisit
-        );
-        toast.success(response.data.message || "Guru berhasil diperbarui! 📝", {
-          position: "top-right",
-        });
-      } else {
-        // CREATE
-        response = await axios.post(
-          BASE_URL,
-          formData,
-          axiosConfig // Menggunakan config dengan Content-Type eksplisit
+          axiosConfig
         );
         toast.success(
-          response.data.message || "Guru berhasil ditambahkan! ✅",
-          { position: "top-right" }
+          response.data.message || "Teacher updated successfully! 📝",
+          {
+            position: "top-right",
+          }
+        );
+      } else {
+        // CREATE
+        response = await axios.post(BASE_URL, formData, axiosConfig);
+        toast.success(
+          response.data.message || "Teacher added successfully! ✅",
+          {
+            position: "top-right",
+          }
         );
       }
       setIsModalOpen(false);
@@ -300,8 +554,8 @@ const TeachersPage: React.FC = () => {
     } catch (error) {
       const err = error as AxiosError<{ message?: string; errors?: any }>;
       const errorMessage = err.response?.data?.message || err.message;
-      console.error("Gagal menyimpan data guru:", err.response?.data || err);
-      toast.error(`Gagal menyimpan: ${errorMessage}`, {
+      console.error("Failed to save teacher data:", err.response?.data || err);
+      toast.error(`Failed to save: ${errorMessage}`, {
         position: "top-right",
       });
     }
@@ -312,41 +566,24 @@ const TeachersPage: React.FC = () => {
     try {
       // Simulasi
       await new Promise((resolve) => setTimeout(resolve, 500));
-      toast.success(`Guru ID ${id} berhasil dihapus (Simulasi)! 🗑️`, {
+      toast.success(`Teacher ID ${id} deleted successfully (Simulation)! 🗑️`, {
         position: "top-right",
       });
       fetchTeachers(currentPage, pageSize);
     } catch (error) {
       const err = error as AxiosError;
-      toast.error(`Gagal menghapus: ${err.message}`, { position: "top-right" });
+      toast.error(`Failed to delete: ${err.message}`, {
+        position: "top-right",
+      });
     }
   };
 
   const columns = getColumns(handleEdit, handleDelete);
 
-  // Fungsi normFile yang konsisten dengan kode HeadOfUnit
-  const normFile = (e: any) => {
-    if (Array.isArray(e)) {
-      return e;
-    }
-    return e?.fileList;
-  };
-
-  // Prop untuk komponen Upload Signature
-  const uploadProps: UploadProps = {
-    name: "signature",
-    multiple: false,
-    maxCount: 1,
-    listType: "picture",
-    beforeUpload: () => false, // Mencegah upload otomatis, seperti di kode HeadOfUnit
-    accept: ".png,.jpg,.jpeg",
-    action: undefined,
-  };
-
   return (
     <>
       <ToastContainer />
-      <div style={{ padding: 24, background: "#fff" }}>
+      <div style={{ background: "#fff" }}>
         {/* Header Halaman dan Tahun Ajaran */}
         <div
           style={{
@@ -358,12 +595,15 @@ const TeachersPage: React.FC = () => {
         >
           <div>
             <Text type="secondary">Home /</Text> <Text strong>Teacher</Text>
-            <Title level={2} style={{ margin: "8px 0 0 0" }}>
+            <Title level={1} style={{ margin: "8px 0 0 0" }}>
               Teachers
             </Title>
           </div>
           <Title level={3} style={{ color: "#888", margin: 0 }}>
-            {currentAcademicYear}
+            {/* 💡 Tampilkan state tahun akademik dari properti tingkat atas */}
+            <span className="font-bold text-zinc-800">
+              {currentAcademicYear}
+            </span>
           </Title>
         </div>
 
@@ -379,13 +619,14 @@ const TeachersPage: React.FC = () => {
           <Input
             prefix={<SearchOutlined style={{ marginRight: 8 }} />}
             placeholder="Search teacher..."
+            style={{ maxWidth: 300 }}
           />
           <Space>
             <Button
               type="primary"
               style={{ backgroundColor: "green", borderColor: "green" }}
               icon={<UploadIcon />}
-              onClick={() => toast.info("Fungsi Mass Upload (Simulasi) 📤")}
+              onClick={() => toast.info("Mass Upload Function (Simulation) 📤")}
             >
               Mass Upload
             </Button>
@@ -395,7 +636,6 @@ const TeachersPage: React.FC = () => {
               onClick={() => {
                 setIsEditing(false);
                 setCurrentTeacher(null);
-                form.resetFields();
                 setIsModalOpen(true);
               }}
             >
@@ -403,7 +643,7 @@ const TeachersPage: React.FC = () => {
             </Button>
             <Button
               icon={<DownloadOutlined />}
-              onClick={() => toast.info("Fungsi Download (Simulasi) 📥")}
+              onClick={() => toast.info("Download Function (Simulation) 📥")}
             />
           </Space>
         </div>
@@ -452,200 +692,13 @@ const TeachersPage: React.FC = () => {
       </div>
 
       {/* Modal Form Tambah/Edit Guru */}
-      <Modal
-        title={
-          isEditing
-            ? `Edit Teacher Information: ${currentTeacher?.name}`
-            : "Add Teacher Information"
-        }
-        open={isModalOpen}
-        onCancel={() => setIsModalOpen(false)}
-        footer={null}
-        destroyOnHidden={true}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleFormSubmit}
-          initialValues={{
-            academic_year_id: 1,
-            gender: "male",
-            is_active: true,
-          }}
-        >
-          <Form.Item name="academic_year_id" hidden>
-            <Input type="hidden" />
-          </Form.Item>
-
-          <Row gutter={24}>
-            {/* NIY / NIP & NUPTK */}
-            <Col span={12}>
-              <Form.Item
-                name="nip"
-                label="NIY / NIP"
-                rules={[{ required: true, message: "Please input NIY/NIP!" }]}
-              >
-                <Input placeholder="56625128890086" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="nuptk" label="NUPTK">
-                <Input placeholder="-" />
-              </Form.Item>
-            </Col>
-
-            {/* Full Name & Join Date */}
-            <Col span={12}>
-              <Form.Item
-                name="name"
-                label="Full Name"
-                rules={[{ required: true, message: "Please input full name!" }]}
-              >
-                <Input placeholder="Budi Santoso" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="join_date"
-                label="Join Date"
-                rules={[
-                  { required: true, message: "Please select join date!" },
-                ]}
-              >
-                <DatePicker
-                  style={{ width: "100%" }}
-                  format="YYYY-MM-DD"
-                  placeholder="Select date"
-                />
-              </Form.Item>
-            </Col>
-
-            {/* Gender & Phone */}
-            <Col span={12}>
-              <Form.Item
-                name="gender"
-                label="Gender"
-                rules={[{ required: true, message: "Please select gender!" }]}
-              >
-                <Select placeholder="L">
-                  <Option value="male">L</Option>
-                  <Option value="female">P</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="phone"
-                label="Phone"
-                rules={[
-                  { required: true, message: "Please input phone number!" },
-                ]}
-              >
-                <Input placeholder="087654562622" />
-              </Form.Item>
-            </Col>
-
-            {/* Email Address & Password access */}
-            <Col span={12}>
-              <Form.Item
-                name="email"
-                label="Email Address"
-                rules={[
-                  { required: true, message: "Please input email!" },
-                  { type: "email", message: "Invalid email format!" },
-                ]}
-              >
-                <Input placeholder="budisantoso@gmail.com" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              {!isEditing && (
-                <Form.Item
-                  name="password"
-                  label="Password access"
-                  rules={[
-                    { required: !isEditing, message: "Please input password!" },
-                  ]}
-                >
-                  <Input.Password placeholder="******" />
-                </Form.Item>
-              )}
-              {isEditing && (
-                <Form.Item
-                  name="password"
-                  label="Password access"
-                  help="Kosongkan jika tidak ingin mengubah password."
-                >
-                  <Input.Password placeholder="******" />
-                </Form.Item>
-              )}
-            </Col>
-
-            {/* Status & Note */}
-            <Col span={12}>
-              <Form.Item
-                name="is_active"
-                label="Status"
-                rules={[{ required: true, message: "Please select status!" }]}
-              >
-                <Select>
-                  <Option value={true}>Active</Option>
-                  <Option value={false}>Inactive</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="note" label="Note (for status Inactive)">
-                <Input placeholder="-" />
-              </Form.Item>
-            </Col>
-
-            {/* Upload Signature (1 kolom penuh) */}
-            <Col span={24}>
-              <Form.Item
-                label="Upload Signature"
-                name="signature"
-                valuePropName="fileList"
-                getValueFromEvent={normFile} // Menggunakan normFile yang sama
-                extra={
-                  isEditing
-                    ? "Tanda tangan saat ini sudah ada. Upload baru untuk mengganti."
-                    : "Unggah tanda tangan (PNG/JPG)"
-                }
-              >
-                <Upload.Dragger {...uploadProps}>
-                  <p className="ant-upload-drag-icon">
-                    <UploadIcon />
-                  </p>
-                  <p className="ant-upload-text">Upload a File</p>
-                  <p className="ant-upload-hint">Drag and drop files here</p>
-                </Upload.Dragger>
-              </Form.Item>
-            </Col>
-
-            {/* Tombol Aksi */}
-            <Col span={24}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  marginTop: 10,
-                }}
-              >
-                <Button
-                  onClick={() => setIsModalOpen(false)}
-                  style={{ marginRight: 8 }}
-                >
-                  Cancel
-                </Button>
-                <Button type="primary" htmlType="submit">
-                  Save
-                </Button>
-              </div>
-            </Col>
-          </Row>
-        </Form>
-      </Modal>
+      <TeacherFormModal
+        isVisible={isModalOpen}
+        onClose={handleCloseModal}
+        onFinish={handleFormSubmit}
+        initialValues={currentTeacher}
+        isEditing={isEditing}
+      />
     </>
   );
 };

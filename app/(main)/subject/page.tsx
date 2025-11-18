@@ -59,6 +59,12 @@ interface ApiSubject {
   academic_year: AcademicYear;
 }
 
+// 💡 Interface untuk struktur respons API baru (jika API mengembalikan objek dengan tahun akademik di tingkat atas)
+interface ApiResponse {
+  academicYear: string;
+  data: ApiSubject[];
+}
+
 interface SubjectData {
   key: string;
   id: number;
@@ -174,7 +180,7 @@ const SubjectPage: React.FC = () => {
   const [pagination, setPagination] = useState({
     currentPage: 1,
     totalRecords: 0,
-    academicYear: "Memuat...",
+    academicYear: "Loading...",
   });
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingSubject, setEditingSubject] = useState<SubjectData | null>(
@@ -186,16 +192,18 @@ const SubjectPage: React.FC = () => {
   const fetchSubjects = useCallback(async (page: number = 1) => {
     setLoading(true);
     try {
-      const response = await axios.get(SUBJECTS_ENDPOINT, {
+      // 💡 Perubahan: Mengubah tipe data respons menjadi ApiResponse
+      const response = await axios.get<ApiResponse>(SUBJECTS_ENDPOINT, {
         params: {
           page: page,
           limit: PAGE_SIZE,
         },
       });
 
-      const apiData: ApiSubject[] = Array.isArray(response.data)
-        ? response.data
-        : response.data.data || [];
+      // 💡 Perubahan: Mengambil 'academicYear' dan 'data' dari properti tingkat atas
+      const { academicYear, data } = response.data;
+
+      const apiData: ApiSubject[] = Array.isArray(data) ? data : [];
 
       const transformedData: SubjectData[] = apiData.map((item) => ({
         key: String(item.id),
@@ -209,17 +217,18 @@ const SubjectPage: React.FC = () => {
         genapActive: item.is_genap,
       }));
 
-      const academicYear =
-        apiData.length > 0
-          ? apiData[0].academic_year.year
-          : "Tahun Akademik Tidak Ditemukan";
+      // 💡 Perubahan: Menggunakan academicYear dari properti tingkat atas
+      const activeYearDisplay =
+        academicYear || "Tahun Akademik Tidak Ditemukan";
 
       setSubjects(transformedData);
       setPagination((prev) => ({
         ...prev,
         currentPage: page,
+        // Catatan: Jika backend sudah menerapkan pagination,
+        // Anda perlu mengganti totalRecords dengan nilai dari metadata respons.
         totalRecords: transformedData.length,
-        academicYear: academicYear,
+        academicYear: activeYearDisplay,
       }));
     } catch (error) {
       console.error("Gagal mengambil data mata pelajaran:", error);
@@ -342,9 +351,7 @@ const SubjectPage: React.FC = () => {
 
   return (
     <>
-      {/* *** TAMBAHKAN TOASTCONTAINER DI ROOT KOMPONEN ***
-        Ini adalah komponen wajib yang akan me-render semua notifikasi toast.
-      */}
+      {/* *** TAMBAHKAN TOASTCONTAINER DI ROOT KOMPONEN *** */}
       <ToastContainer
         position="top-right"
         autoClose={3000}
@@ -373,7 +380,10 @@ const SubjectPage: React.FC = () => {
           Subject
         </Title>
         <Title level={3} style={{ color: "#888", margin: 0 }}>
-          {pagination.academicYear}
+          {/* Tahun akademik sekarang menggunakan state dari properti tingkat atas */}
+          <span className="font-bold text-zinc-800">
+            {pagination.academicYear}
+          </span>
         </Title>
       </div>
 
