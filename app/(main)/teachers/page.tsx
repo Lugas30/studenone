@@ -461,7 +461,7 @@ const TeachersPage: React.FC = () => {
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         footer={null}
-        destroyOnClose={true}
+        destroyOnHidden={true}
       >
         <Form
           form={form}

@@ -199,32 +199,28 @@ const items: MenuItem[] = [
     type: "submenu",
     children: [
       {
-        key: "/input/indicator-spi-sos",
-        label: <Link href="/input/indicator-spi-sos">Indicator Spi & Sos</Link>,
+        key: "/indicator-spi-sos",
+        label: <Link href="/indicator-spi-sos">Indicator Spi & Sos</Link>,
       },
       {
-        key: "/input/indicator-knowledge-skill",
+        key: "/indicator-knowledge-skill",
         label: (
-          <Link href="/input/indicator-knowledge-skill">
+          <Link href="/indicator-knowledge-skill">
             Indicator Knowledge & Skill
           </Link>
         ),
       },
       {
-        key: "/input/indicator-doa-hadits",
-        label: (
-          <Link href="/input/indicator-doa-hadits">Indicator Doa & Hadits</Link>
-        ),
+        key: "/indicator-doa-hadits",
+        label: <Link href="/indicator-doa-hadits">Indicator Doa & Hadits</Link>,
       },
       {
-        key: "/input/indicator-life-skill",
-        label: (
-          <Link href="/input/indicator-life-skill">Indicator Life Skill</Link>
-        ),
+        key: "/indicator-life-skill",
+        label: <Link href="/indicator-life-skill">Indicator Life Skill</Link>,
       },
       {
-        key: "/input/indicator-pid",
-        label: <Link href="/input/indicator-pid">Indicator PID</Link>,
+        key: "/indicator-pid",
+        label: <Link href="/indicator-pid">Indicator PID</Link>,
       },
     ],
   },
