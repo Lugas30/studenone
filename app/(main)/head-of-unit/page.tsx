@@ -2,12 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-// Mengganti import dayjs dengan moment
 import moment from "moment";
-// moment biasanya tidak perlu diimpor secara spesifik seperti 'dayjs',
-// namun beberapa setup Next.js/Webpack mungkin memerlukannya.
-// Jika menggunakan Ant Design DatePicker, pastikan juga sudah ada 'moment' atau 'dayjs' yang di-alias.
-
 import {
   Card,
   Button,
@@ -23,25 +18,29 @@ import {
   Upload,
   DatePicker,
   Spin,
+  Tag,
+  Breadcrumb,
 } from "antd";
 import {
   UploadOutlined,
   EditOutlined,
-  UserOutlined,
+  CalendarOutlined,
   LoadingOutlined,
 } from "@ant-design/icons";
-import { toast, ToastContainer } from "react-toastify";
+import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
+// Konfigurasi Konstanta
 const { Title, Text } = Typography;
 const { Option } = Select;
 
-// Ambil URL dari .env
+// Ambil URL dari .env (Asumsi sudah terdefinisi di lingkungan Next.js)
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const API_IMAGE_URL = process.env.NEXT_PUBLIC_API_IMAGE_URL;
 const HEAD_OF_UNITS_ENDPOINT = `${API_URL}/headofunits`;
 
-// Tipe Data untuk Head of Unit
+// --- INTERFACE (TIPE DATA) ---
+
 interface HeadOfUnitData {
   id: number;
   academic_year_id: number;
@@ -57,15 +56,31 @@ interface HeadOfUnitData {
   updated_at: string;
 }
 
-// ----------------------------------------------------
-// Komponen Modal (Popup) untuk Upload/Update Data
-// ----------------------------------------------------
+interface HeadOfUnitsAPIResponse {
+  academicYear: string; // Tahun ajaran aktif, cth: "2025-2026"
+  data: HeadOfUnitData[];
+}
+
+// --- KOMPONEN PEMBANTU ---
+
+const DataField: React.FC<{ label: string; value: string }> = ({
+  label,
+  value,
+}) => (
+  <div style={{ marginBottom: 16 }}>
+    <Text strong>{label}:</Text>
+    <p style={{ margin: "0 0 5px 0" }}>{value}</p>
+  </div>
+);
+
+// --- MODAL (CREATE/UPDATE) ---
 
 interface UploadModalProps {
   isVisible: boolean;
   onClose: () => void;
-  onSuccess: () => void; // Fungsi untuk refresh data
-  initialData?: HeadOfUnitData; // Data jika dalam mode Edit
+  onSuccess: () => void;
+  initialData?: HeadOfUnitData; // Data jika mode Edit
+  currentAcademicYearId: number | null; // ID Tahun Ajaran dari API
 }
 
 const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
@@ -73,6 +88,7 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
   onClose,
   onSuccess,
   initialData,
+  currentAcademicYearId,
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -81,45 +97,51 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
   useEffect(() => {
     if (isVisible) {
       if (initialData) {
-        // PERUBAHAN: Menggunakan moment() untuk inisialisasi DatePicker
+        // Mode Edit: Isi form dengan data yang ada
         form.setFieldsValue({
           ...initialData,
           date_of_birth: initialData.date_of_birth
-            ? moment(initialData.date_of_birth) // Mengganti dayjs(string) menjadi moment(string)
+            ? moment(initialData.date_of_birth)
             : null,
-          signature: [], // Kosongkan file list untuk signature
+          signature: [], // Kosongkan file list
         });
       } else {
+        // Mode Create: Reset fields dan set default/computed value
         form.resetFields();
+        form.setFieldsValue({
+          gender: "headmaster",
+          academic_year_id: currentAcademicYearId, // Set ID Tahun Ajaran Aktif
+        });
       }
     }
-  }, [isVisible, initialData, form]);
+  }, [isVisible, initialData, form, currentAcademicYearId]);
 
   const onFinish = async (values: any) => {
     setLoading(true);
 
+    if (!values.academic_year_id) {
+      // ✅ Penggunaan toast untuk error
+      toast.error("Academic Year ID tidak ditemukan. Gagal menyimpan.");
+      setLoading(false);
+      return;
+    }
+
     const formData = new FormData();
 
-    // Mapping fields ke format API
-    // Pastikan academic_year_id dikirim (default "1" jika tidak ada)
-    formData.append("academic_year_id", values.academic_year_id || "1");
+    // Mapping fields
+    formData.append("academic_year_id", values.academic_year_id.toString());
     formData.append("name", values.name);
     formData.append("nip", values.nip);
     formData.append("contact", values.contact || "");
     formData.append("email", values.email || "");
-
-    // PERUBAHAN: Menggunakan .format("YYYY-MM-DD") dari objek moment
     formData.append(
       "date_of_birth",
-      values.date_of_birth
-        ? values.date_of_birth.format("YYYY-MM-DD") // Mengganti dayjs().format() menjadi moment().format()
-        : ""
+      values.date_of_birth ? values.date_of_birth.format("YYYY-MM-DD") : ""
     );
-
     formData.append("responsibility_area", values.responsibility_area);
     formData.append("gender", values.gender);
 
-    // Tambahkan Signature File jika ada
+    // Tambahkan Signature File
     const signatureFile = values.signature?.[0]?.originFileObj;
     if (signatureFile) {
       formData.append("signature", signatureFile);
@@ -127,28 +149,30 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
 
     try {
       if (isEditMode) {
-        // API POST/PUT untuk Update (menggunakan form-data dan _method=put)
+        // Update: Gunakan POST dengan form-data dan _method=put
         formData.append("_method", "put");
         await axios.post(
           `${HEAD_OF_UNITS_ENDPOINT}/${initialData?.id}`,
-          formData,
-          // Header Content-Type Dihapus (Perbaikan Masalah Postman)
-          {}
+          formData
         );
-        toast.success("Data Head of Unit berhasil diperbarui!");
-      } else {
-        // API POST untuk Create (menggunakan form-data)
-        await axios.post(HEAD_OF_UNITS_ENDPOINT, formData, {
-          // Header Content-Type Dihapus (Perbaikan Masalah Postman)
-          // Biarkan browser/axios yang mengatur Content-Type dengan boundary
+        // ✅ Penggunaan toast untuk sukses (Update)
+        toast.success("Data Head of Unit berhasil diperbarui!", {
+          position: "top-right",
         });
-        toast.success("Data Head of Unit berhasil ditambahkan!");
+      } else {
+        // Create: Gunakan POST dengan form-data
+        await axios.post(HEAD_OF_UNITS_ENDPOINT, formData);
+        // ✅ Penggunaan toast untuk sukses (Create)
+        toast.success("Data Head of Unit berhasil ditambahkan!", {
+          position: "top-right",
+        });
       }
 
       onSuccess();
       onClose();
     } catch (error) {
       console.error("Error submitting data:", error);
+      // ✅ Penggunaan toast untuk error
       toast.error("Gagal menyimpan data. Cek console log.");
     } finally {
       setLoading(false);
@@ -169,16 +193,21 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
       }
       open={isVisible}
       onCancel={onClose}
-      footer={null} // Hilangkan footer bawaan
-      destroyOnClose={true} // Reset form saat ditutup
+      footer={null}
+      destroyOnClose={true}
     >
       <Form
         form={form}
         layout="vertical"
         onFinish={onFinish}
         style={{ marginTop: 20 }}
-        initialValues={{ gender: "headmaster" }} // Default gender jika mode create
+        initialValues={{ gender: "headmaster" }}
       >
+        {/* Hidden Field untuk Academic Year ID */}
+        <Form.Item name="academic_year_id" hidden rules={[{ required: true }]}>
+          <Input type="hidden" />
+        </Form.Item>
+
         <Form.Item
           label="Nama Lengkap"
           name="name"
@@ -288,33 +317,55 @@ const UploadHeadOfUnitModal: React.FC<UploadModalProps> = ({
   );
 };
 
-// ----------------------------------------------------
-// Komponen Utama (View Data)
-// ----------------------------------------------------
+// --- KOMPONEN UTAMA (VIEW) ---
 
 const HeadOfUnitsView: React.FC = () => {
   const [data, setData] = useState<HeadOfUnitData | null>(null);
+  const [academicYear, setAcademicYear] = useState<string | null>(null);
+  const [currentAcademicYearId, setCurrentAcademicYearId] = useState<
+    number | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<HeadOfUnitData | undefined>(
     undefined
-  ); // Untuk mode Edit
+  );
 
   // Fungsi untuk mengambil data dari API
   const fetchData = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(HEAD_OF_UNITS_ENDPOINT);
-      // Asumsi hanya menampilkan data Head of Unit yang pertama (data[0])
-      if (response.data && response.data.length > 0) {
-        setData(response.data[0]);
+      const response = await axios.get<HeadOfUnitsAPIResponse>(
+        HEAD_OF_UNITS_ENDPOINT
+      );
+
+      const apiData = response.data;
+
+      setAcademicYear(apiData.academicYear);
+
+      if (apiData.data && apiData.data.length > 0) {
+        const firstUnit = apiData.data[0];
+        setData(firstUnit);
+        // ID Tahun Ajaran diambil dari data yang ada
+        setCurrentAcademicYearId(firstUnit.academic_year_id);
       } else {
         setData(null);
+
+        // **Inisialisasi Fallback ID untuk mode Create**
+        const fallbackActiveYearId = 2; // Asumsi ID tahun ajaran aktif
+
+        setCurrentAcademicYearId(fallbackActiveYearId); // Set ID untuk mode Create
+
+        // ✅ Penggunaan toast untuk info
+        toast.info("Data Head of Unit kosong. Silakan tambahkan data baru.");
       }
     } catch (error) {
       console.error("Error fetching data:", error);
-      toast.error("Gagal mengambil data dari API.");
+      // ✅ Penggunaan toast untuk error
+      toast.error("Gagal mengambil data dari API. Silakan coba lagi.");
       setData(null);
+      setAcademicYear(null);
+      setCurrentAcademicYearId(null); // Set null jika fetching gagal total
     } finally {
       setLoading(false);
     }
@@ -324,14 +375,20 @@ const HeadOfUnitsView: React.FC = () => {
     fetchData();
   }, []);
 
-  // Fungsi untuk membuka modal dalam mode Edit
   const handleEdit = (unitData: HeadOfUnitData) => {
     setSelectedUnit(unitData);
     setIsModalVisible(true);
   };
 
-  // Fungsi untuk membuka modal dalam mode Create (jika belum ada data)
   const handleCreate = () => {
+    if (!currentAcademicYearId) {
+      // ✅ Penggunaan toast untuk error
+      toast.error(
+        "Gagal memulai proses upload: ID Tahun Ajaran Aktif tidak terdeteksi."
+      );
+      return;
+    }
+
     setSelectedUnit(undefined);
     setIsModalVisible(true);
   };
@@ -354,28 +411,27 @@ const HeadOfUnitsView: React.FC = () => {
 
   return (
     <>
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-      />
-      <div style={{ padding: "24px" }}>
+      {/* 💡 KOMPONEN TOASTIFY CONTAINER (Diperbaiki/Ditempatkan) */}
+      <ToastContainer />
+      <div>
         {/* Header dan Tombol Aksi */}
         <Space direction="vertical" style={{ width: "100%", marginBottom: 20 }}>
-          <Text type="secondary" style={{ fontSize: 14 }}>
-            Home / Head of Unit
-          </Text>
+          {/* 1. Breadcrumb */}
+          <Breadcrumb
+            items={[{ title: "Home" }, { title: "Grade & Classroom" }]}
+          />
           <Row justify="space-between" align="middle">
             <Title level={2} style={{ margin: 0 }}>
               Head of Unit Details
             </Title>
-            <div>
+            <Space>
+              {/* Tampilan Tahun Ajaran Aktif */}
+              {academicYear && (
+                <Title level={3} style={{ margin: 0 }}>
+                  {academicYear}
+                </Title>
+              )}
+
               {data ? (
                 <Button
                   type="primary"
@@ -389,11 +445,12 @@ const HeadOfUnitsView: React.FC = () => {
                   type="primary"
                   icon={<UploadOutlined />}
                   onClick={handleCreate}
+                  disabled={!currentAcademicYearId}
                 >
                   Upload Data
                 </Button>
               )}
-            </div>
+            </Space>
           </Row>
         </Space>
 
@@ -421,8 +478,7 @@ const HeadOfUnitsView: React.FC = () => {
                   label="Tanggal Lahir"
                   value={
                     data.date_of_birth
-                      ? // PERUBAHAN: Menggunakan moment().format() untuk display
-                        moment(data.date_of_birth).format("DD MMMM YYYY")
+                      ? moment(data.date_of_birth).format("DD MMMM YYYY")
                       : "-"
                   }
                 />
@@ -439,7 +495,6 @@ const HeadOfUnitsView: React.FC = () => {
                   <Text strong>Tanda Tangan:</Text>
                   <div style={{ marginTop: 8 }}>
                     {data.signature ? (
-                      // Tampilkan gambar tanda tangan dari API Image URL
                       <img
                         src={`${API_IMAGE_URL}/${data.signature}`}
                         alt="Tanda Tangan"
@@ -474,22 +529,12 @@ const HeadOfUnitsView: React.FC = () => {
       <UploadHeadOfUnitModal
         isVisible={isModalVisible}
         onClose={() => setIsModalVisible(false)}
-        onSuccess={fetchData} // Panggil fetchData untuk refresh data setelah submit
+        onSuccess={fetchData}
         initialData={selectedUnit}
+        currentAcademicYearId={currentAcademicYearId}
       />
     </>
   );
 };
-
-// Komponen Pembantu untuk menampilkan field data
-const DataField: React.FC<{ label: string; value: string }> = ({
-  label,
-  value,
-}) => (
-  <div style={{ marginBottom: 16 }}>
-    <Text strong>{label}:</Text>
-    <p style={{ margin: "0 0 5px 0" }}>{value}</p>
-  </div>
-);
 
 export default HeadOfUnitsView;

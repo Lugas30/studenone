@@ -115,37 +115,29 @@ const items: MenuItem[] = [
     type: "submenu",
     children: [
       {
-        // URL diubah dari /enrollment/assignment/role-assignment menjadi /assignment/role-assignment
-        key: "/assignment/role-assignment",
-        label: <Link href="/assignment/role-assignment">Role Assignment</Link>,
+        // URL diubah dari /enrollment/role-assignment menjadi /role-assignment
+        key: "/role-assignment",
+        label: <Link href="/role-assignment">Role Assignment</Link>,
       },
       {
-        // URL diubah dari /enrollment/assignment/subject-teacher menjadi /assignment/subject-teacher
-        key: "/assignment/subject-teacher",
-        label: <Link href="/assignment/subject-teacher">Subject Teacher</Link>,
+        // URL diubah dari /enrollment/subject-teacher menjadi /subject-teacher
+        key: "/subject-teacher",
+        label: <Link href="/subject-teacher">Subject Teacher</Link>,
       },
       {
-        // URL diubah dari /enrollment/assignment/homeroom-teacher menjadi /assignment/homeroom-teacher
-        key: "/assignment/homeroom-teacher",
-        label: (
-          <Link href="/assignment/homeroom-teacher">Homeroom Teacher</Link>
-        ),
+        // URL diubah dari /enrollment/homeroom-teacher menjadi /homeroom-teacher
+        key: "/homeroom-teacher",
+        label: <Link href="/homeroom-teacher">Homeroom Teacher</Link>,
       },
       {
-        // URL diubah dari /enrollment/assignment/promotion-graduation menjadi /assignment/promotion-graduation
-        key: "/assignment/promotion-graduation",
-        label: (
-          <Link href="/assignment/promotion-graduation">
-            Promotion & Graduation
-          </Link>
-        ),
+        // URL diubah dari /enrollment/promotion-graduation menjadi /promotion-graduation
+        key: "/promotion-graduation",
+        label: <Link href="/promotion-graduation">Promotion & Graduation</Link>,
       },
       {
-        // URL diubah dari /enrollment/assignment/student-placement menjadi /assignment/student-placement
-        key: "/assignment/student-placement",
-        label: (
-          <Link href="/assignment/student-placement">Student Placement</Link>
-        ),
+        // URL diubah dari /enrollment/student-placement menjadi /student-placement
+        key: "/student-placement",
+        label: <Link href="/student-placement">Student Placement</Link>,
       },
     ],
   },

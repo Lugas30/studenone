@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react"; // Gunakan "react" yang benar
 import {
   Table,
   Input,
@@ -8,7 +8,6 @@ import {
   Space,
   Typography,
   Tag,
-  Menu,
   Dropdown,
   Breadcrumb,
   Modal,
@@ -24,6 +23,7 @@ import {
   UploadOutlined,
   PlusOutlined,
   DownOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -32,8 +32,7 @@ import { ToastContainer, toast } from "react-toastify";
 const { Title } = Typography;
 const { Option } = Select;
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://so-api.queensland.id/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // --- 1. Definisi Tipe Data ---
 
@@ -52,7 +51,8 @@ interface Student {
   join_date: string;
   addmission_type: "regular" | "transfer_in" | "transfer_out" | "drop_out";
   is_active: boolean;
-  academic_year: AcademicYear;
+  // academic_year: AcademicYear; // Tetap pertahankan tipe ini jika ini adalah struktur data dari API /students/{id}
+  academic_year: string; // ⭐️ PERBAIKAN: Mengganti ke string untuk kemudahan (Asumsi API utama mengembalikan string '2023/2024')
   username: string;
   place_birth: string;
   date_of_birth: string;
@@ -93,7 +93,7 @@ type UserStatus =
   | "Graduate";
 
 // --- 2. Fungsi Utility untuk Status Mapping dan Tag ---
-
+// (Tidak ada perubahan pada bagian ini)
 const getDisplayStatus = (
   addmissionType: Student["addmission_type"],
   isActive: boolean
@@ -144,7 +144,8 @@ const getStatusTag = (
   );
 };
 
-// --- 3. Komponen Detail Siswa (REVISI INFORMASI AKADEMIK) ---
+// --- 3. Komponen Detail Siswa ---
+// (Tidak ada perubahan pada bagian ini, kecuali jika ingin menyesuaikan tampilan detail)
 
 const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
   const admissionTypeDisplay = student.addmission_type
@@ -216,12 +217,12 @@ const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
         </Descriptions.Item>
       </Descriptions>
 
-      {/* 3. Informasi Akademik dan Asal Sekolah (REVISI: 2 Kolom) */}
+      {/* 3. Informasi Akademik dan Asal Sekolah */}
       <Descriptions
         title="Informasi Akademik"
         bordered
         size="middle"
-        column={2} // Diubah menjadi 2 kolom
+        column={2}
         style={{ marginBottom: "20px" }}
       >
         <Descriptions.Item label="Tipe Penerimaan">
@@ -235,7 +236,6 @@ const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
         </Descriptions.Item>
         <Descriptions.Item label="Sekolah Asal" span={2}>
           {" "}
-          {/* span disesuaikan menjadi 2 */}
           {student.sekolah_asal || "Tidak Tercatat"}
         </Descriptions.Item>
       </Descriptions>
@@ -264,9 +264,10 @@ const StudentList: React.FC = () => {
   const [data, setData] = useState<Student[]>([]);
   const [initialData, setInitialData] = useState<Student[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchText, setSearchText] = useState("");
 
-  // ✅ PERUBAHAN SUMBER DATA TAHUN AKADEMIK (DIUBAH MENJADI STATIS "2024-2025")
-  const [academicYear, setAcademicYear] = useState("2024-2025");
+  // ⭐️ PERBAIKAN: Inisialisasi state untuk Tahun Akademik
+  const [academicYear, setAcademicYear] = useState("Loading...");
 
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
   const [isFormModalVisible, setIsFormModalVisible] = useState(false);
@@ -282,22 +283,31 @@ const StudentList: React.FC = () => {
       const response = await fetch(`${API_URL}/students`);
       if (!response.ok)
         throw new Error(`HTTP error! status: ${response.status}`);
-      const apiData: Omit<Student, "key">[] = await response.json();
+
+      // ⭐️ PERBAIKAN DARI ERROR: Baca respons JSON sepenuhnya.
+      const responseJson = await response.json();
+
+      // ⭐️ PERBAIKAN 1: Ambil academicYear dari root response
+      const apiAcademicYear =
+        responseJson.academicYear || "Data Tahun Tidak Ditemukan";
+      setAcademicYear(apiAcademicYear); // Simpan tahun akademik ke state
+
+      // Asumsikan array siswa berada di properti 'data'.
+      const apiData: Omit<Student, "key">[] = responseJson.data || [];
+
       const processedData: Student[] = apiData.map((student) => ({
+        // ⭐️ PERBAIKAN 2: Asumsi jika student tidak memiliki academic_year, gunakan yang diambil dari root
         ...student,
         key: student.id.toString(),
         gender: student.gender as "male" | "female",
+        academic_year: student.academic_year, // Jika API /students mengembalikan data ini, gunakan, jika tidak, Anda mungkin perlu mengisinya
       }));
+
       setData(processedData);
       setInitialData(processedData);
-
-      // ❌ Baris berikut dikomentari/dihapus agar academicYear menggunakan nilai statis di atas
-      /* setAcademicYear(
-        processedData.length > 0 ? processedData[0].academic_year.year : "N/A"
-      );
-      */
     } catch (error) {
       console.error("Error fetching students:", error);
+      setAcademicYear("Error Loading Year"); // Perbarui state jika terjadi error
       // toast.error("Gagal mengambil data siswa.");
     } finally {
       setLoading(false);
@@ -472,6 +482,23 @@ const StudentList: React.FC = () => {
     }
   };
 
+  const handleSearch = (value: string) => {
+    setSearchText(value);
+    const lowercasedValue = value.toLowerCase();
+
+    if (lowercasedValue) {
+      const filteredData = initialData.filter(
+        (student) =>
+          student.fullname.toLowerCase().includes(lowercasedValue) ||
+          student.nis.toLowerCase().includes(lowercasedValue) ||
+          student.nisn.toLowerCase().includes(lowercasedValue)
+      );
+      setData(filteredData);
+    } else {
+      setData(initialData);
+    }
+  };
+
   // --- 7. Definisi Kolom Tabel & Breadcrumb ---
 
   const columns: ColumnsType<Student> = [
@@ -567,16 +594,20 @@ const StudentList: React.FC = () => {
     setIsFormModalVisible(true);
   };
 
-  const menu = (
-    <Menu>
-      <Menu.Item key="1" icon={<UploadOutlined />}>
-        Import from Excel
-      </Menu.Item>
-      <Menu.Item key="2" icon={<UploadOutlined />}>
-        Import from CSV
-      </Menu.Item>
-    </Menu>
-  );
+  const menu = {
+    items: [
+      {
+        key: "1",
+        label: "Import from Excel",
+        icon: <UploadOutlined />,
+      },
+      {
+        key: "2",
+        label: "Import from CSV",
+        icon: <UploadOutlined />,
+      },
+    ],
+  };
 
   const breadcrumbItems = [
     { title: <a href="/">Home</a> },
@@ -609,14 +640,15 @@ const StudentList: React.FC = () => {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          marginBottom: "10px",
+          marginBottom: "20px",
         }}
       >
         <Title level={1} style={{ margin: 0 }}>
           Student List
         </Title>
         <Title level={3} style={{ margin: 0 }}>
-          {academicYear} {/* Menampilkan Tahun Akademik Statis */}
+          {academicYear}{" "}
+          {/* ⭐️ PERBAIKAN: Menampilkan Tahun Akademik dari state */}
         </Title>
       </div>
 
@@ -628,15 +660,27 @@ const StudentList: React.FC = () => {
           marginBottom: "20px",
         }}
       >
-        <Input.Search
-          placeholder="Search student by Name, NIS, or NISN..."
-          allowClear
-          onSearch={() => {}}
-          style={{ width: 400 }}
-          loading={loading}
-        />
+        {/* Menggunakan Space.Compact + Input + Button */}
+        <Space.Compact style={{ width: 400 }}>
+          <Input
+            placeholder="Search student by Name, NIS, or NISN..."
+            allowClear
+            value={searchText}
+            onChange={(e) => handleSearch(e.target.value)}
+            onPressEnter={() => handleSearch(searchText)}
+            style={{ width: "100%" }}
+            disabled={loading}
+          />
+          <Button
+            type="primary"
+            icon={<SearchOutlined />}
+            onClick={() => handleSearch(searchText)}
+            loading={loading}
+          />
+        </Space.Compact>
+
         <Space>
-          <Dropdown overlay={menu} placement="bottomRight" trigger={["click"]}>
+          <Dropdown menu={menu} placement="bottomRight" trigger={["click"]}>
             <Button
               type="primary"
               style={{ backgroundColor: "#28a745", borderColor: "#28a745" }}

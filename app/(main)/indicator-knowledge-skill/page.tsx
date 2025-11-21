@@ -1,13 +1,24 @@
 "use client";
-// src/pages/knowledge-skill-input.tsx
+// src/pages/knowledge-skill-input.tsx - Style Disesuaikan dengan GradeClassroomPage
 
 import React, { useState, useMemo } from "react";
 import Head from "next/head";
-import { Table, Input, Button, Select, Space, Breadcrumb } from "antd";
+import {
+  Table,
+  Input,
+  Button,
+  Select,
+  Space,
+  Breadcrumb,
+  Typography,
+} from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 
-// 1. Tipe Data
+const { Title } = Typography;
+const { Option } = Select;
+
+// 1. Tipe Data (Disesuaikan untuk Knowledge & Skill Indicators)
 // =============================================================================
 interface SubjectData {
   id: number;
@@ -15,9 +26,12 @@ interface SubjectData {
   teacher: string;
   grade: number;
   semester: "Ganjil" | "Genap";
+  // Menambahkan Indicator sesuai dengan kebutuhan halaman
+  knowledgeIndicator: string;
+  skillIndicator: string;
 }
 
-// 2. Data Dummy
+// 2. Data Dummy (Disesuaikan dengan Gambar)
 // =============================================================================
 const DUMMY_DATA: SubjectData[] = [
   // Data Grade 2 (Sesuai Gambar)
@@ -27,6 +41,10 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Aulia Rahman",
     grade: 2,
     semester: "Ganjil",
+    // Data Knowledge & Skill Sesuai Gambar
+    knowledgeIndicator:
+      "Knowing the basic state of Pancasila, understanding ...",
+    skillIndicator: "Reading the 'Pancasila', singing the 'Indonesia ...",
   },
   {
     id: 2,
@@ -34,6 +52,8 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Siti Aminah",
     grade: 2,
     semester: "Ganjil",
+    knowledgeIndicator: "-", // Sesuai Gambar
+    skillIndicator: "-", // Sesuai Gambar
   },
   {
     id: 3,
@@ -41,6 +61,8 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Aulia Rahman",
     grade: 2,
     semester: "Ganjil",
+    knowledgeIndicator: "-", // Sesuai Gambar
+    skillIndicator: "-", // Sesuai Gambar
   },
   {
     id: 4,
@@ -48,6 +70,8 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Fanny Ghaisani",
     grade: 2,
     semester: "Ganjil",
+    knowledgeIndicator: "-", // Sesuai Gambar
+    skillIndicator: "-", // Sesuai Gambar
   },
   {
     id: 5,
@@ -55,6 +79,8 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Budi Santoso",
     grade: 2,
     semester: "Ganjil",
+    knowledgeIndicator: "-", // Sesuai Gambar
+    skillIndicator: "-", // Sesuai Gambar
   },
 
   // Data Tambahan untuk Grade lain
@@ -64,6 +90,8 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Joko Widodo",
     grade: 1,
     semester: "Ganjil",
+    knowledgeIndicator: "Basic greetings",
+    skillIndicator: "Introducing self",
   },
   {
     id: 7,
@@ -71,6 +99,8 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Megawati",
     grade: 3,
     semester: "Ganjil",
+    knowledgeIndicator: "Understanding simple maps",
+    skillIndicator: "Drawing neighborhood maps",
   },
   {
     id: 8,
@@ -78,6 +108,8 @@ const DUMMY_DATA: SubjectData[] = [
     teacher: "Dr. Einstein",
     grade: 3,
     semester: "Ganjil",
+    knowledgeIndicator: "Konsep dasar gaya",
+    skillIndicator: "Menganalisis gerak lurus",
   },
 ];
 
@@ -94,20 +126,35 @@ const KnowledgeSkillPage: React.FC = () => {
     alert(`${action} mata pelajaran: ${record.subject} oleh ${record.teacher}`);
   };
 
-  // Definisi Kolom Tabel Ant Design
+  // Definisi Kolom Tabel Ant Design (Disesuaikan untuk Knowledge & Skill)
   const columns: ColumnsType<SubjectData> = [
     {
       title: "Subject",
       dataIndex: "subject",
       key: "subject",
       sorter: (a, b) => a.subject.localeCompare(b.subject),
-      width: "30%",
+      width: "15%", // Dikecilkan untuk memberi ruang Knowledge/Skill
     },
     {
       title: "Teacher",
       dataIndex: "teacher",
       key: "teacher",
-      width: "30%",
+      width: "15%", // Dikecilkan
+    },
+    {
+      title: "Knowledge", // Kolom Baru
+      dataIndex: "knowledgeIndicator",
+      key: "knowledgeIndicator",
+      width: "25%",
+      // Menggunakan render untuk memastikan tampilan "-" jika data kosong (meskipun sudah di dummy)
+      render: (text: string) => text || "-",
+    },
+    {
+      title: "Skill", // Kolom Baru
+      dataIndex: "skillIndicator",
+      key: "skillIndicator",
+      width: "25%",
+      render: (text: string) => text || "-",
     },
     {
       title: "Action",
@@ -118,6 +165,8 @@ const KnowledgeSkillPage: React.FC = () => {
             Input
           </Button>
           <Button
+            // Warna View dikembalikan menjadi hijau (#52c41a)
+            type="primary"
             style={{
               backgroundColor: "#52c41a",
               borderColor: "#52c41a",
@@ -129,7 +178,7 @@ const KnowledgeSkillPage: React.FC = () => {
           </Button>
         </Space>
       ),
-      width: "40%",
+      width: "20%", // Dikecilkan
     },
   ];
 
@@ -155,10 +204,11 @@ const KnowledgeSkillPage: React.FC = () => {
 
   // Aksi ketika tombol Apply Filter diklik
   const handleApplyFilter = () => {
-    // Dalam aplikasi nyata, ini adalah tempat untuk memuat data dari API
-    // Untuk contoh ini, kita hanya melakukan re-render filter yang sudah di-handle oleh useMemo
     console.log(`Filter applied for Grade: ${selectedGrade}`);
   };
+
+  const currentAcademicYear = "2024-2025";
+  const currentSemester = "Ganjil";
 
   return (
     <>
@@ -166,80 +216,99 @@ const KnowledgeSkillPage: React.FC = () => {
         <title>Indicator Input | Knowledge & Skill</title>
       </Head>
 
-      <div style={{ background: "#fff", minHeight: "100vh" }}>
-        {/* Breadcrumb Section (Identik dengan Gambar) */}
+      {/* Konten Halaman */}
+      <div>
+        {/* 1. Breadcrumb (Style Mirip GradeClassroomPage) */}
+        <Breadcrumb
+          items={[{ title: "Home" }, { title: "Indicator Input" }]} // Disesuaikan dengan gambar
+        />
+
+        {/* 2. Title dan Tahun Akademik (Style Mirip GradeClassroomPage) */}
         <div
-          style={{ padding: "16px 24px", borderBottom: "1px solid #f0f0f0" }}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            margin: "16px 0 24px 0",
+          }}
         >
-          <Breadcrumb>
-            <Breadcrumb.Item>Home</Breadcrumb.Item>
-            <Breadcrumb.Item>Indicator Input</Breadcrumb.Item>
-          </Breadcrumb>
+          <Title level={1} style={{ margin: 0 }}>
+            Knowledge & Skill
+          </Title>
+          <Title level={3} style={{ color: "#888", margin: 0 }}>
+            <span style={{ fontWeight: 700, color: "#333" }}>
+              {currentAcademicYear}
+            </span>{" "}
+            ({currentSemester})
+          </Title>
         </div>
 
-        <div style={{ padding: "24px" }}>
-          {/* Header Section */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "16px",
-            }}
-          >
-            <h1 style={{ fontSize: "24px", margin: 0 }}>Knowledge & Skill</h1>
-            <h2 style={{ fontSize: "18px", margin: 0 }}>2024-2025 (Ganjil)</h2>
-          </div>
+        {/* 3. Filter and Search Section (Toolbar Ramping) */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: "24px",
+          }}
+        >
+          {/* Group Kiri: Search Input */}
+          <Input
+            placeholder="Search customer 100 records..." // Disesuaikan dengan Gambar
+            prefix={<SearchOutlined />}
+            style={{ width: 300 }}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
 
-          {/* Filter and Search Section */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "16px",
-              marginBottom: "24px",
-            }}
-          >
-            <Input
-              placeholder="Search customer 100 records..."
-              prefix={<SearchOutlined />}
-              style={{ width: 300 }}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          {/* Group Kanan: Filter dan Tombol */}
+          <Space>
             <Select
-              placeholder="Grade"
+              placeholder="Grade" // Disesuaikan dengan Gambar
               style={{ width: 120 }}
               value={selectedGrade}
               onChange={(value) => setSelectedGrade(value)}
             >
               {gradeOptions.map((grade) => (
-                <Select.Option key={grade} value={grade}>
-                  Grade {grade}
-                </Select.Option>
+                <Option key={grade} value={grade}>
+                  Grade
+                </Option> // Opsi disederhanakan menjadi "Grade" saja
               ))}
             </Select>
             <Button
               type="primary"
-              // Menggunakan warna hijau sesuai gambar
-              style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
               onClick={handleApplyFilter}
+              // Warna Apply Filter disesuaikan menjadi hijau (#52c41a)
+              style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
             >
               Apply Filter
             </Button>
-          </div>
+            {/* Tombol Search (Dihilangkan, tidak ada di gambar) */}
+          </Space>
+        </div>
 
-          {/* Grade Indicator */}
+        {/* 4. Grade Indicator & Table Container */}
+        <div
+          style={{
+            border: "1px solid #f0f0f0",
+            borderRadius: "4px",
+            backgroundColor: "#fff",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            padding: "24px 24px 16px 24px",
+            marginBottom: "24px",
+          }}
+        >
           {selectedGrade !== undefined && (
-            <h2
+            <Title
+              level={4}
               style={{
-                fontSize: "20px",
-                fontWeight: "normal",
+                fontWeight: 600,
                 marginBottom: "16px",
+                padding: "0 0 8px 0",
+                borderBottom: "1px solid #f0f0f0",
               }}
             >
               Grade : {selectedGrade}
-            </h2>
+            </Title>
           )}
 
           {/* Table Section */}
@@ -248,9 +317,8 @@ const KnowledgeSkillPage: React.FC = () => {
             dataSource={filteredData}
             rowKey="id"
             pagination={false}
-            style={{ width: "100%" }}
-            // Menghilangkan garis pinggir jika diinginkan (opsional)
-            // className="knowledge-skill-table"
+            size="large"
+            style={{ width: "100%", marginTop: "8px" }}
           />
         </div>
       </div>

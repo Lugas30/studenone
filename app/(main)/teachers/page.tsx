@@ -19,6 +19,7 @@ import {
   Row,
   Col,
   Upload,
+  Breadcrumb,
 } from "antd";
 import {
   SearchOutlined,
@@ -584,26 +585,25 @@ const TeachersPage: React.FC = () => {
     <>
       <ToastContainer />
       <div style={{ background: "#fff" }}>
-        {/* Header Halaman dan Tahun Ajaran */}
+        {/* Breadcrumb */}
+        <div style={{ marginBottom: "10px" }}>
+          <Breadcrumb items={[{ title: "Home" }, { title: "Teachers" }]} />
+        </div>
+
+        {/* Header */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: 20,
+            marginBottom: "20px",
           }}
         >
-          <div>
-            <Text type="secondary">Home /</Text> <Text strong>Teacher</Text>
-            <Title level={1} style={{ margin: "8px 0 0 0" }}>
-              Teachers
-            </Title>
-          </div>
-          <Title level={3} style={{ color: "#888", margin: 0 }}>
-            {/* 💡 Tampilkan state tahun akademik dari properti tingkat atas */}
-            <span className="font-bold text-zinc-800">
-              {currentAcademicYear}
-            </span>
+          <Title level={1} style={{ margin: 0 }}>
+            Teachers
+          </Title>
+          <Title level={3} style={{ margin: 0 }}>
+            {currentAcademicYear} {/* Menampilkan Tahun Akademik Statis */}
           </Title>
         </div>
 

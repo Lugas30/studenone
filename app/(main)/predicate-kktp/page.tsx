@@ -177,7 +177,7 @@ const PredicateFormModal: React.FC<PredicateFormModalProps> = ({
       open={isVisible}
       onCancel={onCancel}
       footer={null}
-      destroyOnClose={true} // Reset form saat ditutup
+      destroyOnHidden={true} // Reset form saat ditutup
     >
       <Form
         form={form}
