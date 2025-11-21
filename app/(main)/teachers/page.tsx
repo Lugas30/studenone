@@ -96,7 +96,7 @@ const getColumns = (
   handleDelete: (id: number) => void
 ): ColumnsType<Teacher> => [
   {
-    title: "NIP",
+    title: "NIY / NIP",
     dataIndex: "nip",
     key: "nip",
     sorter: (a, b) => a.nip.localeCompare(b.nip),

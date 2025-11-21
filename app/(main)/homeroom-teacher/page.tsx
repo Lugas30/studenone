@@ -1,8 +1,6 @@
-// src/app/homeroom-teacher/page.tsx
-
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Layout,
   Typography,
@@ -16,7 +14,8 @@ import {
   Menu,
   Dropdown,
   Pagination,
-  Divider, // Ditambahkan untuk garis pemisah
+  Divider,
+  Spin, // Ditambahkan untuk indikator loading
 } from "antd";
 import {
   SearchOutlined,
@@ -26,13 +25,50 @@ import {
   DownOutlined,
 } from "@ant-design/icons";
 
+// Import axios
+import axios from "axios";
+
+// Import React Toastify
+import { toast } from "react-toastify";
+// Pastikan file CSS Toastify sudah diimport di root layout Anda!
+
 const { Content } = Layout;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
-// --- 1. DATA DUMMY & INTERFACE ---
+// Ambil URL API dari .env
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+// --- 1. INTERFACE API ---
+// Sesuaikan dengan struktur data API yang sebenarnya
+export interface HomeroomTeacherAPIRecord {
+  id: number;
+  teacher_id: number;
+  assistant_id: number | null;
+  classroom_id: number;
+  academic_year_id: number;
+  semester: string; // "ganjil" | "genap"
+  academic_year: {
+    year: string;
+  };
+  teacher: {
+    name: string;
+  };
+  assistant: {
+    name: string;
+  } | null;
+  classroom: {
+    grade: string; // "1", "2", dst
+    section: string; // "A", "B", dst
+    class_name: string;
+    code: string; // P1A, P1B, dst
+  };
+}
+
+// Interface untuk data yang akan ditampilkan di tabel
 export interface HomeroomTeacherRecord {
   key: string;
+  id: number;
   grade: number;
   class: string;
   className: string;
@@ -41,67 +77,9 @@ export interface HomeroomTeacherRecord {
   semester: "Ganjil" | "Genap";
 }
 
-export const homeroomTeacherData: HomeroomTeacherRecord[] = [
-  // Data dummy tetap sama
-  {
-    key: "1",
-    grade: 1,
-    class: "P1A",
-    className: "Abdullah Bin Muhammad",
-    teacher: "Budi Santoso",
-    coTeacher: "Ahmad Saputra",
-    semester: "Ganjil",
-  },
-  {
-    key: "2",
-    grade: 1,
-    class: "P1B",
-    className: "Abdullah Bin Muhammad",
-    teacher: "Fatimah",
-    coTeacher: "Ahmad Saputra",
-    semester: "Genap",
-  },
-  {
-    key: "3",
-    grade: 1,
-    class: "P1C",
-    className: "Aminah binti Wahb",
-    teacher: "Fanny Setyawati",
-    coTeacher: "Aulia Rahman",
-    semester: "Ganjil",
-  },
-  {
-    key: "4",
-    grade: 2,
-    class: "P2A",
-    className: "Aminah binti Wahb",
-    teacher: "—",
-    coTeacher: "—",
-    semester: "Genap",
-  },
-  {
-    key: "5",
-    grade: 2,
-    class: "P2B",
-    className: "Hamzah bin Abdul Muttalib",
-    teacher: "Dummy Yati",
-    coTeacher: "Siti Aminah",
-    semester: "Ganjil",
-  },
-  {
-    key: "6",
-    grade: 2,
-    class: "P2C",
-    className: "Hamzah bin Abdul Muttalib",
-    teacher: "—",
-    coTeacher: "—",
-    semester: "Genap",
-  },
-];
-
 // --- 2. KONFIGURASI KOLOM TABEL ---
+// Kolom menggunakan interface HomeroomTeacherRecord
 const columns = [
-  // Kolom-kolom tetap sama
   {
     title: "Grade",
     dataIndex: "grade",
@@ -128,16 +106,15 @@ const columns = [
     width: 80,
     render: (_: any, record: HomeroomTeacherRecord) => (
       <Space size="middle">
-        {/* Ikon Aksi (View & Edit) */}
         <Button
           icon={<EyeOutlined />}
           type="text"
-          onClick={() => console.log("View:", record.key)}
+          onClick={() => toast.info(`View Homeroom ID: ${record.id}`)}
         />
         <Button
           icon={<EditOutlined />}
           type="text"
-          onClick={() => console.log("Edit:", record.key)}
+          onClick={() => toast.info(`Edit Homeroom ID: ${record.id}`)}
         />
       </Space>
     ),
@@ -153,9 +130,137 @@ const assignmentMenu = (
 
 // --- 3. KOMPONEN HALAMAN UTAMA ---
 const HomeroomTeacherPage: React.FC = () => {
-  const totalRecords = 50 * 10;
-  const pageSize = 10;
-  const currentPage = 6;
+  const [data, setData] = useState<HomeroomTeacherRecord[]>([]);
+  const [academicYear, setAcademicYear] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // State untuk Pagination Client-Side
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [totalRecords, setTotalRecords] = useState<number>(0);
+  const [goToPage, setGoToPage] = useState<string>("");
+
+  // State untuk Filter
+  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [semesterFilter, setSemesterFilter] = useState<string>("all");
+  const [searchText, setSearchText] = useState<string>("");
+
+  // Fungsi untuk mengambil data dari API
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (!API_URL) {
+        throw new Error("NEXT_PUBLIC_API_URL is not defined in .env");
+      }
+      const response = await axios.get(`${API_URL}/homerooms`);
+
+      if (response.data && Array.isArray(response.data.data)) {
+        setAcademicYear(response.data.academicYear || "");
+
+        // Mapping data API ke format tabel
+        const formattedData: HomeroomTeacherRecord[] = response.data.data.map(
+          (item: HomeroomTeacherAPIRecord) => ({
+            key: item.id.toString(),
+            id: item.id,
+            grade: parseInt(item.classroom.grade, 10),
+            class: item.classroom.code,
+            className: item.classroom.class_name,
+            teacher: item.teacher?.name || "—",
+            coTeacher: item.assistant?.name || "—",
+            semester:
+              item.semester === "ganjil"
+                ? "Ganjil"
+                : item.semester === "genap"
+                ? "Genap"
+                : "—",
+          })
+        );
+        setData(formattedData);
+        setTotalRecords(formattedData.length);
+        toast.success("Data Homeroom berhasil dimuat! 🎉");
+      } else {
+        setData([]);
+        setTotalRecords(0);
+        toast.warning("API merespon tanpa properti data yang valid.");
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      toast.error("Gagal memuat data Homeroom. Cek konsol untuk detail.");
+      setData([]);
+      setTotalRecords(0);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // --- LOGIC FILTERING DAN PAGINATION CLIENT-SIDE ---
+
+  const filteredData = useMemo(() => {
+    return data.filter((record) => {
+      // 1. Filter Grade
+      if (gradeFilter !== "all" && record.grade !== parseInt(gradeFilter)) {
+        return false;
+      }
+
+      // 2. Filter Semester
+      if (semesterFilter !== "all" && record.semester !== semesterFilter) {
+        return false;
+      }
+
+      // 3. Search Text Filter
+      if (searchText) {
+        const lowerSearchText = searchText.toLowerCase();
+        return (
+          record.className.toLowerCase().includes(lowerSearchText) ||
+          record.teacher.toLowerCase().includes(lowerSearchText) ||
+          record.coTeacher.toLowerCase().includes(lowerSearchText) ||
+          record.class.toLowerCase().includes(lowerSearchText)
+        );
+      }
+
+      return true;
+    });
+  }, [data, gradeFilter, semesterFilter, searchText]);
+
+  // Data yang akan ditampilkan di halaman saat ini
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return filteredData.slice(startIndex, endIndex);
+  }, [filteredData, currentPage, pageSize]);
+
+  // Update total records setelah filtering
+  useEffect(() => {
+    setTotalRecords(filteredData.length);
+    setCurrentPage(1); // Kembali ke halaman 1 setelah filter
+  }, [filteredData]);
+
+  // Handler Pagination
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    setGoToPage(page.toString());
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    setPageSize(parseInt(value, 10));
+    setCurrentPage(1); // Kembali ke halaman 1
+    setGoToPage("1");
+  };
+
+  const handleGoToPage = () => {
+    const pageNum = parseInt(goToPage, 10);
+    const maxPage = Math.ceil(totalRecords / pageSize);
+    if (pageNum >= 1 && pageNum <= maxPage) {
+      setCurrentPage(pageNum);
+    } else {
+      toast.error(`Halaman harus antara 1 dan ${maxPage}`);
+      setGoToPage(currentPage.toString());
+    }
+  };
 
   return (
     <Layout
@@ -169,7 +274,7 @@ const HomeroomTeacherPage: React.FC = () => {
       <Row justify="space-between" align="middle" style={{ marginBottom: 10 }}>
         <Col>
           <Text type="secondary" style={{ fontSize: 14 }}>
-            Home / Subject Teacher
+            Home / Homeroom Teacher
           </Text>
           <Title level={2} style={{ margin: "0 0 5px 0", fontWeight: 600 }}>
             Homeroom Teacher
@@ -180,7 +285,7 @@ const HomeroomTeacherPage: React.FC = () => {
             level={2}
             style={{ margin: 0, fontWeight: 400, color: "#333" }}
           >
-            2024-2025
+            {academicYear || "Loading..."}
           </Title>
         </Col>
       </Row>
@@ -192,18 +297,27 @@ const HomeroomTeacherPage: React.FC = () => {
         {/* Search Input */}
         <Col>
           <Input
-            placeholder="Search customer 100 records..."
+            placeholder="Search..."
             prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
             style={{ width: 300 }}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
           />
         </Col>
 
         {/* Grade Filter */}
         <Col>
-          <Select defaultValue="all" style={{ width: 120 }} placeholder="Grade">
-            <Option value="all">Grade</Option>
+          <Select
+            defaultValue="all"
+            style={{ width: 120 }}
+            placeholder="Grade"
+            onChange={(value) => setGradeFilter(value)}
+            value={gradeFilter}
+          >
+            <Option value="all">Grade (Semua)</Option>
             <Option value="1">1</Option>
             <Option value="2">2</Option>
+            {/* Tambahkan grade lain sesuai kebutuhan */}
           </Select>
         </Col>
 
@@ -213,19 +327,23 @@ const HomeroomTeacherPage: React.FC = () => {
             defaultValue="all"
             style={{ width: 120 }}
             placeholder="Semester"
+            onChange={(value) => setSemesterFilter(value)}
+            value={semesterFilter}
           >
-            <Option value="all">Semester</Option>
+            <Option value="all">Semester (Semua)</Option>
             <Option value="Ganjil">Ganjil</Option>
             <Option value="Genap">Genap</Option>
           </Select>
         </Col>
 
-        {/* Sisa ruang kosong untuk filter lainnya */}
         <Col flex="auto" />
 
         {/* Download Button */}
         <Col>
-          <Button icon={<DownloadOutlined />} />
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => toast.info("Fitur Download belum diimplementasikan")}
+          />
         </Col>
 
         {/* Assignment Dropdown Button */}
@@ -240,13 +358,18 @@ const HomeroomTeacherPage: React.FC = () => {
 
       {/* 📊 TABLE SECTION */}
       <Content>
-        <Table
-          columns={columns}
-          dataSource={homeroomTeacherData}
-          pagination={false} // Matikan pagination bawaan
-          bordered={false}
-          scroll={{ x: "max-content" }}
-        />
+        <Spin spinning={loading}>
+          <Table
+            columns={columns}
+            dataSource={paginatedData} // Gunakan data yang sudah dipaginasi
+            pagination={false} // Matikan pagination bawaan
+            bordered={false}
+            scroll={{ x: "max-content" }}
+            locale={{
+              emptyText: loading ? "Memuat Data..." : "Tidak ada data Homeroom",
+            }}
+          />
+        </Spin>
       </Content>
 
       {/* 👣 CUSTOM PAGINATION FOOTER */}
@@ -256,7 +379,7 @@ const HomeroomTeacherPage: React.FC = () => {
         style={{
           marginTop: 16,
           padding: "10px 0",
-          borderTop: "1px solid #f0f0f0", // Tambahkan garis pemisah ringan
+          borderTop: "1px solid #f0f0f0",
         }}
       >
         {/* Kiri: Row per page & Go to */}
@@ -264,7 +387,13 @@ const HomeroomTeacherPage: React.FC = () => {
           <Space size="middle">
             <Space>
               <Text type="secondary">Row per page</Text>
-              <Select defaultValue="10" style={{ width: 70 }} size="small">
+              <Select
+                defaultValue="10"
+                style={{ width: 70 }}
+                size="small"
+                onChange={handlePageSizeChange}
+                value={pageSize.toString()}
+              >
                 <Option value="10">10</Option>
                 <Option value="20">20</Option>
                 <Option value="50">50</Option>
@@ -272,35 +401,27 @@ const HomeroomTeacherPage: React.FC = () => {
             </Space>
             <Space>
               <Text type="secondary">Go to</Text>
-              <Input defaultValue="9" style={{ width: 50 }} size="small" />
+              <Input
+                style={{ width: 50 }}
+                size="small"
+                value={goToPage}
+                onChange={(e) => setGoToPage(e.target.value)}
+                onPressEnter={handleGoToPage}
+                onBlur={handleGoToPage}
+              />
             </Space>
+            <Text type="secondary">Total {totalRecords} records</Text>
           </Space>
         </Col>
 
-        {/* Kanan: Pagination (Menyerupai tampilan Simple Pagination) */}
+        {/* Kanan: Pagination Ant Design */}
         <Col>
           <Pagination
-            simple // Menggunakan mode simple
             current={currentPage}
             total={totalRecords}
             pageSize={pageSize}
-            // Hapus showTotal untuk menghindari error TS2322
-            onChange={(page) => console.log("Page change:", page)}
-            // itemRender kustom untuk menampilkan halaman pertama/terakhir dan ellipsis
-            itemRender={(page, type, originalElement) => {
-              if (type === "page") {
-                // Halaman 1, 4, 5, 6, 7, 8, 50 (sebagai contoh visualisasi)
-                const pagesToShow = [1, 4, 5, 6, 7, 8, 50];
-                if (pagesToShow.includes(page)) {
-                  return originalElement;
-                }
-                // Tampilkan ellipsis setelah halaman 1 dan sebelum halaman 50
-                if (page === 2 || page === totalRecords / pageSize - 1)
-                  return <span style={{ padding: "0 8px" }}>...</span>;
-                return null;
-              }
-              return originalElement;
-            }}
+            onChange={handlePageChange}
+            showSizeChanger={false} // showSizeChanger sudah diimplementasikan di bagian kiri
           />
         </Col>
       </Row>
