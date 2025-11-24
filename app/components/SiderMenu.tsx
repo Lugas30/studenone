@@ -159,25 +159,21 @@ const items: MenuItem[] = [
     type: "submenu",
     children: [
       {
-        key: "/report/student-attendance",
-        label: (
-          <Link href="/report/student-attendance">Student Attendance</Link>
-        ),
+        key: "/student-attendance",
+        label: <Link href="/student-attendance">Student Attendance</Link>,
       },
       {
-        key: "/report/student-attendance-qurans",
+        key: "/student-attendance-qurans",
         label: (
-          <Link href="/report/student-attendance-qurans">
+          <Link href="/student-attendance-qurans">
             Student Attendance Qurans
           </Link>
         ),
       },
       {
-        key: "/report/student-health-condition",
+        key: "/student-health-condition",
         label: (
-          <Link href="/report/student-health-condition">
-            Student Health Condition
-          </Link>
+          <Link href="/student-health-condition">Student Health Condition</Link>
         ),
       },
     ],

@@ -42,7 +42,7 @@ interface EditTeacherRoleModalProps {
   isModalOpen: boolean;
   handleCancel: () => void;
   onSuccess: () => void;
-  recordId: number; // ID record yang akan diedit
+  recordId: number; // ID record yang digunakan HANYA untuk mengambil data awal (GET)
 }
 
 const EditTeacherRoleModal: React.FC<EditTeacherRoleModalProps> = ({
@@ -69,7 +69,7 @@ const EditTeacherRoleModal: React.FC<EditTeacherRoleModalProps> = ({
 
     setInitialLoading(true);
     try {
-      // 1. Fetch Dependencies (Roles, Teachers, Classrooms - sama seperti Add)
+      // 1. Fetch Dependencies (Roles, Teachers, Classrooms)
       const [rolesRes, teachersRes, classroomsRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/roles`),
         axios.get(`${API_BASE_URL}/teachers`),
@@ -92,7 +92,6 @@ const EditTeacherRoleModal: React.FC<EditTeacherRoleModalProps> = ({
       );
 
       // 2. Fetch Data Record yang akan diedit (API GET by ID)
-      // Catatan: Endpoint GET by ID /role-teachers/{id} diasumsikan mengembalikan data yang diperlukan
       const recordRes = await axios.get(
         `${API_BASE_URL}/role-teachers/${recordId}`
       );
@@ -104,7 +103,7 @@ const EditTeacherRoleModal: React.FC<EditTeacherRoleModalProps> = ({
         );
         const initialClassId = data.role_teacher_assignments.find((a: any) =>
           homebaseTriggerRoleIds.includes(a.role_id)
-        )?.class_id; // Asumsi class_id berada di dalam assignment jika ini adalah Homebase
+        )?.class_id;
 
         // Cek apakah Homebase harus ditampilkan
         const shouldShow = assignedRoles.some((id: number) =>
@@ -135,9 +134,9 @@ const EditTeacherRoleModal: React.FC<EditTeacherRoleModalProps> = ({
       form.resetFields();
       setShowHomebase(false);
     }
-  }, [isModalOpen, recordId]);
+  }, [isModalOpen, recordId, form]); // Tambahkan form ke dependency array
 
-  // --- Fungsi Submit Form (API PUT) ---
+  // --- Fungsi Submit Form (DIUBAH DARI PUT MENJADI POST) ---
   const onFinish = async (values: EditRoleFormValues) => {
     if (!API_BASE_URL) return toast.error("API URL tidak terdefinisi.");
 
@@ -160,11 +159,12 @@ const EditTeacherRoleModal: React.FC<EditTeacherRoleModalProps> = ({
         ...(needsClassId && values.class_id && { class_id: values.class_id }),
       };
 
-      // Menggunakan PUT ke endpoint dengan ID
-      const response = await axios.put(
-        `${API_BASE_URL}/role-teachers/${recordId}`,
+      // *** PERUBAHAN UTAMA: Menggunakan POST ke endpoint collection untuk update ***
+      const response = await axios.post(
+        `${API_BASE_URL}/role-teachers`, // Endpoint POST/Create
         payload
       );
+      // *************************************************************************
 
       toast.success(response.data.message || "Peran guru berhasil diperbarui!");
 

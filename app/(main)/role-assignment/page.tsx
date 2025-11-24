@@ -21,7 +21,7 @@ import { toast } from "react-toastify";
 import axios from "axios";
 import {
   SearchOutlined,
-  UploadOutlined, // Dipertahankan untuk Mass Upload
+  UploadOutlined,
   UserAddOutlined,
   EyeOutlined,
   EditOutlined,
@@ -30,6 +30,7 @@ import {
 } from "@ant-design/icons";
 
 // --- Impor Komponen Modal ---
+// Pastikan path ini benar di proyek Anda
 import AddTeacherRoleModal from "../../components/AddTeacherRoleModal";
 import EditTeacherRoleModal from "../../components/EditTeacherRoleModal";
 import ViewTeacherRoleModal from "../../components/ViewTeacherRoleModal";
@@ -38,6 +39,7 @@ const { Content } = Layout;
 const { Option } = Select;
 
 // Ambil BASE URL dari .env
+// Dalam lingkungan nyata, pastikan variabel ini dimuat dengan benar.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // --- 1. Definisi Tipe Data (Disesuaikan dengan data API) ---
@@ -92,38 +94,41 @@ export default function RoleAssignmentPage() {
     return filteredData.slice(start, end);
   }, [filteredData, currentPage, pageSize]);
 
-  // --- 3. Fungsi Fetch Data dari API ---
+  // --- 3. Fungsi Fetch Data dari API (Perbaikan Homebase di sini) ---
   const fetchData = useCallback(async () => {
     if (!API_BASE_URL) return toast.error("API URL tidak terdefinisi.");
 
     setLoading(true);
     try {
+      // Ganti dengan endpoint API Anda yang sebenarnya
       const response = await axios.get(`${API_BASE_URL}/role-teachers`);
       const apiData = response.data.data;
 
       setAcademicYear(response.data.academicYear || "Tahun Akademik N/A");
 
       const mappedData: RoleAssignmentTableData[] = apiData.map((item: any) => {
+        // Ambil semua role
         const roles = item.role_teacher_assignments.map(
           (a: any) => a.role.role
         );
 
-        const homebaseAssignment = item.role_teacher_assignments.find(
-          (a: any) =>
-            (a.role.role === "Homeroom Teacher" ||
-              a.role.role === "Homeroom Assistant") &&
-            a.class_id
-        );
+        // *** PERBAIKAN LOGIKA HOMEBASE ***
+        // Homebase diambil dari properti 'homeroom' di level item (data utama),
+        // karena data API menunjukkan relasi kelas ada di situ (homeroom.classroom).
+        const homeroomData = item.homeroom;
 
-        const homebaseClass = homebaseAssignment
-          ? `${homebaseAssignment.class.code} - ${homebaseAssignment.class.class_name}`
-          : "-";
+        const homebaseClass =
+          homeroomData && homeroomData.classroom
+            ? `${homeroomData.classroom.code} - ${homeroomData.classroom.class_name}`
+            : "-";
+        // *** AKHIR PERBAIKAN ***
 
         return {
           id: item.id,
           nip: item.teacher.nip || item.teacher.nuptk || "-",
           teacherName: item.teacher.name,
-          gender: item.teacher.gender === "male" ? "L" : "P", // Menggunakan L/P sesuai kode Anda
+          // Menggunakan L/P
+          gender: item.teacher.gender === "male" ? "L" : "P",
           roles: roles,
           homebaseClass: homebaseClass,
           key: item.id.toString(),
@@ -146,7 +151,6 @@ export default function RoleAssignmentPage() {
   // --- 4. Handlers untuk Aksi dan Pagination ---
 
   const handlePageChange = (page: number, size: number) => {
-    // Pastikan ukuran page tidak berubah jika hanya menavigasi halaman
     setCurrentPage(page);
     if (size !== pageSize) {
       setPageSize(size);
@@ -179,6 +183,7 @@ export default function RoleAssignmentPage() {
       onOk: async () => {
         if (!API_BASE_URL) return toast.error("API URL tidak terdefinisi.");
         try {
+          // Ganti dengan endpoint API Anda yang sebenarnya
           await axios.delete(`${API_BASE_URL}/role-teachers/${record.id}`);
           toast.success("Peran guru berhasil dihapus!");
           fetchData();
@@ -225,7 +230,7 @@ export default function RoleAssignmentPage() {
       dataIndex: "roles",
       key: "roles",
       render: (roles: string[]) => (
-        // Menggunakan Tag untuk visualisasi Role yang lebih baik daripada string polos
+        // Menggunakan Tag untuk visualisasi Role yang lebih baik
         <Space size={[0, 8]} wrap>
           {roles.map((role) => (
             <Tag
@@ -239,7 +244,7 @@ export default function RoleAssignmentPage() {
       ),
     },
     {
-      title: "Homebase", // Kolom tambahan dari data API
+      title: "Homebase",
       dataIndex: "homebaseClass",
       key: "homebaseClass",
       width: 150,
@@ -351,11 +356,10 @@ export default function RoleAssignmentPage() {
           <Table
             columns={columns}
             dataSource={paginatedData}
-            rowKey="id" // Menggunakan ID sebagai key
+            rowKey="id"
             pagination={customPaginationConfig}
             size="middle"
             scroll={{ x: "max-content" }}
-            // Style untuk membatasi tabel (sesuai kode Anda)
             style={{ border: "1px solid #f0f0f0", borderBottom: "none" }}
           />
 
@@ -384,7 +388,6 @@ export default function RoleAssignmentPage() {
                   <Option value={50}>50</Option>
                 </Select>
 
-                {/* Pindah Go To ke sini */}
                 <span style={{ color: "rgba(0,0,0,0.65)", marginLeft: 16 }}>
                   Go to
                 </span>
@@ -398,7 +401,6 @@ export default function RoleAssignmentPage() {
                   size="small"
                 />
 
-                {/* Tampilkan total item/halaman jika diperlukan */}
                 <span style={{ color: "rgba(0,0,0,0.65)", marginLeft: 16 }}>
                   Total: {totalItems} items
                 </span>
@@ -414,7 +416,6 @@ export default function RoleAssignmentPage() {
                 onChange={handlePageChange}
                 showSizeChanger={false}
                 size="small"
-                // ItemRender digunakan untuk mendapatkan style pagination Anda
                 itemRender={(page, type, originalElement) => {
                   if (type === "page") {
                     const isCurrent = page === currentPage;

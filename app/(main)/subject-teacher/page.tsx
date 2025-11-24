@@ -1,6 +1,8 @@
-"use client"; // Diperlukan jika menggunakan App Router di Next.js 13+
+"use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import axios from "axios";
+import { toast } from "react-toastify"; // Import toast dari react-toastify
 import {
   Table,
   Button,
@@ -12,10 +14,10 @@ import {
   Dropdown,
   Menu,
   Pagination,
+  Spin, // Tambahkan Spin untuk loading
 } from "antd";
 import {
   SearchOutlined,
-  PlusOutlined,
   DownloadOutlined,
   EyeOutlined,
   EditOutlined,
@@ -24,89 +26,53 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import type { MenuProps } from "antd";
 
+// Ambil URL dasar dari .env
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_ENDPOINT = "/subject-teachers";
+
 // --- I. Data Types (Interface) ---
+// Perbarui interface SubjectTeacherData sesuai dengan format yang akan digunakan untuk tabel
 export interface SubjectTeacherData {
-  /** Nomor Induk Pegawai */
+  id: number;
   NIP: string;
-  /** Nama Guru */
   teacherName: string;
-  /** Mata Pelajaran yang diajarkan */
   subjects: string;
-  /** Daftar Kelas yang diajar */
   classList: string;
-  /** Semester mengajar */
-  semester: "Ganjil" | "Genap";
+  semester: "Ganjil" | "Genap" | "N/A";
 }
 
-// --- II. Dummy Data ---
-export const dummyData: SubjectTeacherData[] = [
-  {
-    NIP: "790841",
-    teacherName: "Budi Santoso",
-    subjects: "Matematika",
-    classList: "P1A, P3A",
-    semester: "Ganjil",
-  },
-  {
-    NIP: "790842",
-    teacherName: "Fatimah",
-    subjects: "PKN",
-    classList: "P3A, P4B, P4C",
-    semester: "Genap",
-  },
-  {
-    NIP: "798699",
-    teacherName: "Fanny Seyawati",
-    subjects: "Bahasa Indonesia",
-    classList: "P2A, P3B, P3C, P3D",
-    semester: "Ganjil",
-  },
-  {
-    NIP: "790752",
-    teacherName: "Edrick Candra",
-    subjects: "Science",
-    classList: "P1A, P3A",
-    semester: "Genap",
-  },
-  {
-    NIP: "790955",
-    teacherName: "Yanti",
-    subjects: "ICT",
-    classList: "P1A, P3A",
-    semester: "Ganjil",
-  },
-  {
-    NIP: "790843",
-    teacherName: "Dummy Yati",
-    subjects: "PAI",
-    classList: "P1A, P3A",
-    semester: "Genap",
-  },
-  // Data dummy tambahan untuk simulasi
-  {
-    NIP: "790844",
-    teacherName: "Ahmad Faisal",
-    subjects: "Seni Budaya",
-    classList: "P5A, P5B",
-    semester: "Ganjil",
-  },
-  {
-    NIP: "790845",
-    teacherName: "Citra Dewi",
-    subjects: "Bahasa Inggris",
-    classList: "P1B, P2C",
-    semester: "Genap",
-  },
-];
+// Interface untuk data dari API (opsional, tapi bagus untuk type safety)
+interface ApiSubjectTeacher {
+  id: number;
+  is_ganjil: boolean;
+  is_genap: boolean;
+  subject: {
+    name: string;
+  };
+  teacher: {
+    nip: string;
+    name: string;
+  };
+  subject_teacher_classes: {
+    classroom: {
+      code: string;
+    };
+  }[];
+}
 
-// --- III. Definisi Kolom Tabel ---
+interface ApiResponse {
+  academicYear: string;
+  data: ApiSubjectTeacher[];
+}
+
+// --- II. Definisi Kolom Tabel ---
 const columns: ColumnsType<SubjectTeacherData> = [
   {
     title: "NIP",
     dataIndex: "NIP",
     key: "NIP",
     sorter: (a, b) => a.NIP.localeCompare(b.NIP),
-    width: 100,
+    width: 120,
   },
   {
     title: "Teacher Name",
@@ -143,29 +109,105 @@ const columns: ColumnsType<SubjectTeacherData> = [
         <Button
           type="text"
           icon={<EyeOutlined style={{ color: "#1890ff" }} />}
-          onClick={() => console.log("View:", record.NIP)}
+          onClick={() => toast.info(`View data ${record.NIP}`)} // Contoh Toastify
         />
         {/* Tombol Edit */}
         <Button
           type="text"
           icon={<EditOutlined style={{ color: "#1890ff" }} />}
-          onClick={() => console.log("Edit:", record.NIP)}
+          onClick={() => toast.warn(`Edit data ${record.NIP}`)} // Contoh Toastify
         />
       </Space>
     ),
   },
 ];
 
-// --- IV. Komponen Subject Teacher ---
+// --- III. Komponen Subject Teacher ---
 const SubjectTeacherPage: React.FC = () => {
-  const [pageSize, setPageSize] = useState(10);
-  const [currentPage, setCurrentPage] = useState(7); // Default ke halaman 7 sesuai gambar
-  const totalPages = 50;
-  const totalRecords = totalPages * pageSize; // Simulasi total 500 records
+  const [data, setData] = useState<SubjectTeacherData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [academicYear, setAcademicYear] = useState("");
 
+  // State Pagination (biarkan default untuk simulasi Ant Design/tampilan)
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = 50; // Asumsi total halaman
+  const totalRecords = totalPages * pageSize; // Simulasi total records
+
+  /**
+   * Fungsi untuk memproses data dari API ke format SubjectTeacherData
+   * @param apiData Data dari respons API
+   * @returns Data dalam format SubjectTeacherData[]
+   */
+  const transformData = (
+    apiData: ApiSubjectTeacher[]
+  ): SubjectTeacherData[] => {
+    return apiData.map((item) => ({
+      id: item.id,
+      NIP: item.teacher.nip || "N/A",
+      teacherName: item.teacher.name || "N/A",
+      subjects: item.subject.name || "N/A",
+      // Gabungkan semua kode kelas
+      classList: item.subject_teacher_classes
+        .map((cls) => cls.classroom.code)
+        .join(", "),
+      // Tentukan semester
+      semester: item.is_ganjil ? "Ganjil" : item.is_genap ? "Genap" : "N/A",
+    }));
+  };
+
+  /**
+   * Fungsi untuk mengambil data dari API
+   */
+  const fetchData = useCallback(async () => {
+    if (!BASE_URL) {
+      toast.error("NEXT_PUBLIC_API_URL tidak ditemukan di .env!");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const url = `${BASE_URL}${API_ENDPOINT}`;
+      const response = await axios.get<ApiResponse>(url);
+
+      const transformedData = transformData(response.data.data);
+      setData(transformedData);
+      setAcademicYear(response.data.academicYear);
+
+      toast.success("Data Subject Teacher berhasil dimuat! 🎉");
+    } catch (error) {
+      let errorMessage = "Gagal memuat data Subject Teacher.";
+      if (axios.isAxiosError(error) && error.response) {
+        // Asumsi API mengembalikan pesan error dalam response.data.message/error
+        errorMessage = `Gagal memuat data: ${error.response.status} - ${
+          error.response.data.message ||
+          error.response.data.error ||
+          "Server Error"
+        }`;
+      } else {
+        errorMessage = `Gagal memuat data: ${
+          error instanceof Error ? error.message : "Kesalahan tidak diketahui"
+        }`;
+      }
+
+      toast.error(errorMessage);
+      console.error("Fetch Data Error:", error);
+      setData([]); // Kosongkan data jika gagal
+    } finally {
+      setLoading(false);
+    }
+  }, []); // Dependensi kosong, hanya dijalankan sekali saat mount
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // --- Fungsi dan Konfigurasi Pagination (TETAP SAMA) ---
   const handlePageChange = (page: number, size: number) => {
     setCurrentPage(page);
     setPageSize(size);
+    // TODO: Implementasi logika fetch data API dengan parameter page dan size di sini
+    toast.info(`Mengubah ke halaman ${page} dengan ${size} baris.`);
   };
 
   const menu: MenuProps["items"] = [
@@ -174,53 +216,34 @@ const SubjectTeacherPage: React.FC = () => {
     { key: "50", label: "50", onClick: () => setPageSize(50) },
   ];
 
-  const pageRange = (current: number, total: number) => {
-    const pages = [];
-    if (total <= 10) {
-      for (let i = 1; i <= total; i++) pages.push(i);
-      return pages;
+  // itemRender untuk kustomisasi tampilan pagination Ant Design (dapat dihapus jika tidak diperlukan)
+  const itemRender = (
+    page: number,
+    type: "page" | "prev" | "next" | "jump-prev" | "jump-next",
+    originalElement: React.ReactNode
+  ) => {
+    if (type === "page") {
+      return (
+        <span
+          onClick={() => setCurrentPage(page)}
+          style={{
+            border:
+              page === currentPage ? "1px solid #1890ff" : "1px solid #d9d9d9",
+            color: page === currentPage ? "#1890ff" : "rgba(0, 0, 0, 0.65)",
+            backgroundColor: page === currentPage ? "#e6f7ff" : "white",
+            borderRadius: "4px",
+            padding: "0 8px",
+            cursor: "pointer",
+            margin: "0 4px",
+          }}
+        >
+          {page}
+        </span>
+      );
     }
-
-    // Logika untuk meniru tampilan: 1 ... 5 6 7 8 ... 50
-    pages.push(1);
-
-    if (current > 4) pages.push("...");
-
-    const start = Math.max(2, current - 2);
-    const end = Math.min(total - 1, current + 2);
-
-    for (let i = start; i <= end; i++) {
-      if (i !== 1 && i !== total) pages.push(i);
-    }
-
-    if (current < total - 3) pages.push("...");
-
-    pages.push(total);
-
-    // Filter duplikat dan pastikan urutan
-    const uniquePages = Array.from(new Set(pages))
-      .filter((p) => p !== "...")
-      .sort((a: any, b: any) => a - b);
-
-    const finalPages: (number | string)[] = [1];
-
-    for (let i = 1; i < uniquePages.length; i++) {
-      const prev = uniquePages[i - 1] as number;
-      const curr = uniquePages[i] as number;
-      if (curr - prev > 1) {
-        finalPages.push("...");
-      }
-      finalPages.push(curr);
-    }
-
-    if (finalPages[finalPages.length - 1] !== total) {
-      if (total - (finalPages[finalPages.length - 1] as number) > 1)
-        finalPages.push("...");
-      finalPages.push(total);
-    }
-
-    return Array.from(new Set(finalPages.map(String)));
+    return originalElement;
   };
+  // --- Akhir Fungsi Pagination ---
 
   return (
     <div style={{ padding: "24px" }}>
@@ -242,7 +265,7 @@ const SubjectTeacherPage: React.FC = () => {
         </Col>
         <Col>
           <span style={{ fontSize: "30px", fontWeight: "bold" }}>
-            2024-2025
+            {academicYear || "Loading..."}
           </span>
         </Col>
       </Row>
@@ -256,7 +279,7 @@ const SubjectTeacherPage: React.FC = () => {
       >
         <Col xs={24} md={12} lg={8}>
           <Input
-            placeholder="Search customer 100 records..."
+            placeholder={`Search customer ${totalRecords} records...`}
             prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.45)" }} />}
             style={{ borderRadius: "6px" }}
           />
@@ -265,16 +288,25 @@ const SubjectTeacherPage: React.FC = () => {
           <Space>
             <Button
               type="primary"
-              onClick={() => console.log("Add Subject Teacher")}
+              onClick={() => toast.success("Menambah Subject Teacher")} // Contoh Toastify
               style={{ fontWeight: "bold", borderRadius: "6px" }}
             >
               Add Subject Teacher
             </Button>
             <Button
               icon={<DownloadOutlined />}
-              onClick={() => console.log("Download")}
+              onClick={() => toast.info("Mengunduh data...")} // Contoh Toastify
               style={{ borderRadius: "6px" }}
             />
+            {/* Tombol Refresh/Reload Data */}
+            <Button
+              icon={<SearchOutlined />}
+              onClick={fetchData}
+              loading={loading}
+              style={{ borderRadius: "6px" }}
+            >
+              Refresh
+            </Button>
           </Space>
         </Col>
       </Row>
@@ -287,13 +319,15 @@ const SubjectTeacherPage: React.FC = () => {
           overflow: "hidden",
         }}
       >
-        <Table
-          columns={columns}
-          dataSource={dummyData}
-          rowKey="NIP"
-          pagination={false}
-          scroll={{ x: "max-content" }}
-        />
+        <Spin spinning={loading} tip="Memuat data...">
+          <Table
+            columns={columns}
+            dataSource={data} // Gunakan data dari API
+            rowKey="id" // Gunakan ID unik dari API
+            pagination={false}
+            scroll={{ x: "max-content" }}
+          />
+        </Spin>
       </div>
 
       {/* --- Kontrol Bawah (Pagination) --- */}
@@ -342,38 +376,7 @@ const SubjectTeacherPage: React.FC = () => {
             showSizeChanger={false}
             onChange={handlePageChange}
             style={{ marginLeft: "auto" }}
-            // Menggunakan itemRender untuk mengontrol tampilan angka halaman
-            itemRender={(page, type, originalElement) => {
-              if (type === "page") {
-                return (
-                  <span
-                    onClick={() => setCurrentPage(page)}
-                    style={{
-                      border:
-                        page === currentPage
-                          ? "1px solid #1890ff"
-                          : "1px solid #d9d9d9",
-                      color:
-                        page === currentPage
-                          ? "#1890ff"
-                          : "rgba(0, 0, 0, 0.65)",
-                      backgroundColor:
-                        page === currentPage ? "#e6f7ff" : "white",
-                      borderRadius: "4px",
-                      padding: "0 8px",
-                      cursor: "pointer",
-                      margin: "0 4px",
-                    }}
-                  >
-                    {page}
-                  </span>
-                );
-              }
-              if (type === "jump-prev" || type === "jump-next") {
-                return <span style={{ padding: "0 4px" }}>...</span>;
-              }
-              return originalElement;
-            }}
+            itemRender={itemRender}
           />
         </Col>
       </Row>
