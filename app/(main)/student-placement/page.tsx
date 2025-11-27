@@ -1,551 +1,567 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  Layout,
   Typography,
-  Select,
-  Button,
   Row,
   Col,
-  Card,
+  Select,
+  Button,
   Input,
   Table,
-  Checkbox,
+  Card,
   Space,
-  notification,
+  Spin,
 } from "antd";
-import { SearchOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import type { TableProps } from "antd";
-
-// =======================================================
-// 1. DATA DUMMY & TYPESCRIPT INTERFACE
-// =======================================================
-
-// Interface untuk Siswa di Grade Awal
-export interface CurrentStudent {
-  nis: string;
-  studentName: string;
-}
-
-// Interface untuk Siswa yang Sudah Ditempatkan di Kelas
-export interface PlacedStudent extends CurrentStudent {
-  classId: string; // Kelas tujuan (misal: P3A)
-}
-
-// Data Dummy Siswa di Grade 3
-const studentsInGrade3: CurrentStudent[] = [
-  { nis: "790841", studentName: "Aathirah Dhanesa Prayuda" },
-  { nis: "790842", studentName: "Abyan Mufid Shaquille" },
-  { nis: "798699", studentName: "Ahza Danendra Abdillah" },
-  { nis: "790752", studentName: "Akhtar Khairazky Subiyanto" },
-  { nis: "790955", studentName: "Aldeberan Kenan Arrazka" },
-  { nis: "790780", studentName: "Bima Satria Nusantara" },
-  { nis: "790781", studentName: "Citra Dewi Lestari" },
-];
-
-// Data Dummy Siswa yang Sudah Ditempatkan
-const placedStudentsInitial: PlacedStudent[] = [
-  { nis: "790841", studentName: "Fatah Al Amin", classId: "P3A" },
-  { nis: "790842", studentName: "Sakilah Mawadah", classId: "P3A" },
-  { nis: "798699", studentName: "Azzahra Mutia", classId: "P3A" },
-];
-
-const totalStudentsInGrade3 = 10; // Sesuai gambar
-const currentGrade = 3;
-const initialClass = "P3A";
-
-export type GradeValue = number | string;
-
-export interface PlacementState {
-  currentGrade: number;
-  targetClass: string;
-  students: CurrentStudent[];
-  placedStudents: PlacedStudent[];
-  selectedStudentsToPlace: string[];
-  totalStudentsInCurrentGrade: number;
-}
-
-// =======================================================
-// 2. KOMPONEN UTAMA NEXT.JS/REACT
-// =======================================================
+import { SearchOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import axios from "axios";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const { Title, Text } = Typography;
-const { Content } = Layout;
 
-// Opsi Grade dan Class
-const gradeOptions = Array.from({ length: 12 }, (_, i) => ({
-  value: i + 1,
-  label: String(i + 1),
-}));
+// --- Konfigurasi API ---
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const api = axios.create({
+  baseURL: BASE_URL,
+});
 
-const classOptions = [
-  { value: "P3A", label: "P3A" },
-  { value: "P3B", label: "P3B" },
-  { value: "P3C", label: "P3C" },
+// --- 1. TIPE DATA (Interfaces) ---
+
+interface AcademicYear {
+  id: number;
+  year: string;
+  is_active: boolean;
+}
+
+interface Classroom {
+  id: number;
+  grade: string;
+  section: string;
+  code: string; // Contoh: P1A, P2B
+}
+
+interface StudentAPI {
+  id: number;
+  nis: string;
+  fullname: string;
+  grade: string;
+  academic_year: AcademicYear;
+}
+
+interface Student extends StudentAPI {
+  key: string;
+  currentClass: string;
+}
+
+interface PlacementData {
+  id: number; // ID Siswa
+  nis: string;
+  fullname: string;
+  key: string;
+}
+
+type GradeOption = "1" | "2" | "3" | "4" | "5" | "6";
+
+// ---------------------------------------------------
+// 2. DEFINISI KOLOM TABLE
+// ---------------------------------------------------
+
+const studentColumns: TableProps<Student>["columns"] = [
+  {
+    title: "NIS",
+    dataIndex: "nis",
+    key: "nis",
+    width: "30%",
+    sorter: (a: Student, b: Student) => a.nis.localeCompare(b.nis),
+  },
+  {
+    title: "Student Name",
+    dataIndex: "fullname",
+    key: "fullname",
+    sorter: (a: Student, b: Student) => a.fullname.localeCompare(b.fullname),
+  },
+  {
+    title: "Grade",
+    dataIndex: "grade",
+    key: "grade",
+    width: "20%",
+  },
 ];
 
-const StudentPlacementPage: React.FC = () => {
-  const [state, setState] = useState<PlacementState>({
-    currentGrade: currentGrade,
-    targetClass: initialClass,
-    students: studentsInGrade3,
-    placedStudents: placedStudentsInitial,
-    selectedStudentsToPlace: placedStudentsInitial.map((s) => s.nis),
-    totalStudentsInCurrentGrade: totalStudentsInGrade3,
-  });
+const placementColumns = (
+  handleRemove: (nis: string) => void
+): TableProps<PlacementData>["columns"] => [
+  {
+    title: "NIS",
+    dataIndex: "nis",
+    key: "nis",
+    width: "30%",
+  },
+  {
+    title: "Student Name",
+    dataIndex: "fullname",
+    key: "fullname",
+  },
+  {
+    title: "Cancel",
+    key: "action",
+    width: "15%",
+    render: (text: string, record: PlacementData) => (
+      <Button
+        danger
+        type="text"
+        icon={<CloseCircleOutlined style={{ fontSize: "18px" }} />}
+        onClick={() => handleRemove(record.nis)}
+      />
+    ),
+  },
+];
 
-  // State pencarian untuk tabel kiri (Students in grade)
-  const [currentSearchTerm, setCurrentSearchTerm] = useState<string>("");
-  // State pencarian untuk tabel kanan (Class Placement)
-  const [placedSearchTerm, setPlacedSearchTerm] = useState<string>("");
+// ---------------------------------------------------
+// 3. KOMPONEN UTAMA
+// ---------------------------------------------------
 
-  // Handler perubahan Grade Awal
-  const handleCurrentGradeChange = (value: GradeValue) => {
-    // Reset state penempatan ketika grade diubah
-    setState((prev) => ({
-      ...prev,
-      currentGrade: Number(value),
-      // Dummy: Ganti siswa untuk grade baru
-      students: studentsInGrade3,
-      placedStudents: [],
-      selectedStudentsToPlace: [],
-    }));
-  };
+const StudentPlacement: React.FC = () => {
+  // --- State Management ---
+  const [loading, setLoading] = useState(false);
+  const [academicYear, setAcademicYear] = useState("Memuat...");
 
-  const handleApplyGrade = () => {
-    notification.info({
-      message: "Grade Diterapkan",
-      description: `Menampilkan siswa untuk grade ${state.currentGrade}.`,
+  const [currentGrade, setCurrentGrade] = useState<GradeOption>("1");
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+
+  const [availableClasses, setAvailableClasses] = useState<Classroom[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [selectedClassName, setSelectedClassName] =
+    useState<string>("Pilih Kelas");
+
+  const [placementData, setPlacementData] = useState<PlacementData[]>([]);
+  const [selectedStudentKeys, setSelectedStudentKeys] = useState<React.Key[]>(
+    []
+  );
+
+  const [searchStudent, setSearchStudent] = useState<string>("");
+  const [searchPlacement, setSearchPlacement] = useState<string>("");
+
+  // --- Fetch Data Hooks ---
+
+  const fetchClassrooms = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get("/classrooms");
+      const data = response.data.data as Classroom[];
+      setAvailableClasses(data);
+
+      const year =
+        response.data.academicYear || "Tahun Akademik Tidak Ditemukan";
+      setAcademicYear(year);
+
+      // Set default kelas ke kelas pertama (setelah diurutkan, ini akan menjadi kelas terkecil)
+      if (data.length > 0) {
+        const defaultClass = [...data].sort((a, b) =>
+          a.code.localeCompare(b.code)
+        )[0];
+        setSelectedClassId(defaultClass.id);
+        setSelectedClassName(defaultClass.code);
+      }
+      toast.success(`Kelas berhasil dimuat. Tahun Akademik: ${year}`);
+    } catch (error) {
+      toast.error("❌ Gagal memuat data Kelas atau Tahun Akademik.");
+      console.error("Error fetching classrooms:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchStudents = useCallback(async (grade: GradeOption) => {
+    setLoading(true);
+    setAllStudents([]);
+    setPlacementData([]);
+    setSelectedStudentKeys([]);
+
+    try {
+      const response = await api.get(
+        `/pag/students/status-grade-student/${grade}`
+      );
+      const fetchedStudents: Student[] = response.data.data.map(
+        (s: StudentAPI) => ({
+          id: s.id,
+          nis: s.nis || "N/A",
+          fullname: s.fullname,
+          currentClass: `Grade ${s.grade}`,
+          grade: s.grade,
+          key: s.id.toString(),
+        })
+      );
+
+      setAllStudents(fetchedStudents);
+      toast.info(
+        `Berhasil memuat ${fetchedStudents.length} siswa Grade ${grade}.`
+      );
+    } catch (error) {
+      toast.error(`❌ Gagal memuat data siswa Grade ${grade}.`);
+      console.error("Error fetching students:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchClassrooms();
+  }, [fetchClassrooms]);
+
+  useEffect(() => {
+    fetchStudents(currentGrade);
+  }, [currentGrade, fetchStudents]);
+
+  // --- Logic Penempatan Siswa (UI Side) ---
+
+  const handleAddToClass = () => {
+    if (!selectedClassId) {
+      toast.error("Pilih kelas tujuan terlebih dahulu!");
+      return;
+    }
+    if (selectedStudentKeys.length === 0) {
+      toast.warning("Silakan pilih minimal satu siswa untuk ditambahkan.");
+      return;
+    }
+
+    const studentsToPlace: PlacementData[] = allStudents
+      .filter((student) => selectedStudentKeys.includes(student.key))
+      .map((student) => ({
+        id: student.id,
+        nis: student.nis,
+        fullname: student.fullname,
+        key: student.key,
+      }));
+
+    const newPlacementData = [...placementData];
+    studentsToPlace.forEach((student) => {
+      if (!newPlacementData.some((p) => p.id === student.id)) {
+        newPlacementData.push(student);
+      }
     });
+
+    setPlacementData(newPlacementData);
+    setSelectedStudentKeys([]);
+    toast.success(
+      `${studentsToPlace.length} siswa ditambahkan ke kelas ${selectedClassName}.`
+    );
   };
 
-  const handleTargetClassChange = (value: string) => {
-    setState((prev) => ({
-      ...prev,
-      targetClass: value,
-    }));
+  const handleRemoveFromPlacement = (nis: string) => {
+    setPlacementData((prev) => prev.filter((student) => student.nis !== nis));
+    toast.warn(`Siswa dengan NIS ${nis} dibatalkan dari penempatan.`);
   };
 
-  // Handler Checkbox di kolom kiri
-  const handleStudentSelection = (
-    checked: boolean,
-    student: CurrentStudent
-  ) => {
-    setState((prev) => {
-      let updatedSelected: string[];
-      if (checked) {
-        if (!prev.selectedStudentsToPlace.includes(student.nis)) {
-          updatedSelected = [...prev.selectedStudentsToPlace, student.nis];
-        } else {
-          updatedSelected = prev.selectedStudentsToPlace;
-        }
+  // --- Logic Submit Penempatan (API POST) ---
+  const handleSubmitPlacement = async () => {
+    if (placementData.length === 0) {
+      toast.error("Silakan tambahkan siswa ke kelas tujuan sebelum submit!");
+      return;
+    }
+    if (!selectedClassId) {
+      toast.error("Kelas tujuan belum dipilih.");
+      return;
+    }
+
+    const studentIds = placementData.map((s) => s.id);
+
+    const postData = {
+      student_id: studentIds,
+      classroom_id: selectedClassId,
+    };
+
+    setLoading(true);
+
+    try {
+      const response = await api.post("/pag/students/classroom", postData);
+
+      if (response.status === 200 || response.status === 201) {
+        toast.success(
+          `✅ ${placementData.length} siswa berhasil ditempatkan di kelas ${selectedClassName}!`
+        );
+
+        fetchStudents(currentGrade);
+        setPlacementData([]);
       } else {
-        updatedSelected = prev.selectedStudentsToPlace.filter(
-          (nis) => nis !== student.nis
+        toast.error(
+          `Gagal submit: ${response.data.message || "Respons tidak terduga."}`
         );
       }
-      return {
-        ...prev,
-        selectedStudentsToPlace: updatedSelected,
-      };
-    });
+    } catch (error) {
+      let errorMessage = "Gagal memproses penempatan. Silakan coba lagi.";
+      if (axios.isAxiosError(error) && error.response) {
+        errorMessage = error.response.data.message || errorMessage;
+      }
+      toast.error(`❌ ${errorMessage}`);
+      console.error("Submit Placement Error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Handler Tombol Add to Class
-  const handleAddToClass = () => {
-    setState((prev) => {
-      // Siswa yang dipilih yang belum ada di daftar placed
-      const newStudentsToPlace = prev.students
-        .filter(
-          (s) =>
-            prev.selectedStudentsToPlace.includes(s.nis) &&
-            !prev.placedStudents.some((ps) => ps.nis === s.nis)
-        )
-        .map((s) => ({
-          nis: s.nis,
-          studentName: s.studentName,
-          classId: prev.targetClass, // Tambahkan classId saat dipindahkan
-        }));
+  // --- Computed Values (Pencarian & Filtering UI) ---
 
-      // Gabungkan data
-      const updatedPlacedStudents = [
-        ...prev.placedStudents.filter(
-          (s) => !newStudentsToPlace.some((n) => n.nis === s.nis)
-        ), // Pastikan tidak ada duplikasi
-        ...newStudentsToPlace,
-      ];
+  const filteredStudents = useMemo(() => {
+    const available = allStudents.filter(
+      (student) => !placementData.some((p) => p.id === student.id)
+    );
+    return available.filter(
+      (student) =>
+        student.nis.includes(searchStudent) ||
+        student.fullname.toLowerCase().includes(searchStudent.toLowerCase())
+    );
+  }, [searchStudent, allStudents, placementData]);
 
-      // Update selectedStudentsToPlace agar sesuai dengan placedStudents
-      const updatedSelected = updatedPlacedStudents.map((s) => s.nis);
+  const filteredPlacement = useMemo(() => {
+    return placementData.filter(
+      (student) =>
+        student.nis.includes(searchPlacement) ||
+        student.fullname.toLowerCase().includes(searchPlacement.toLowerCase())
+    );
+  }, [searchPlacement, placementData]);
 
-      notification.success({
-        message: "Siswa Ditambahkan",
-        description: `${newStudentsToPlace.length} siswa ditambahkan ke kelas ${prev.targetClass}.`,
-      });
-
-      return {
-        ...prev,
-        placedStudents: updatedPlacedStudents,
-        selectedStudentsToPlace: updatedSelected,
-      };
+  // Opsi Select Kelas: Mengurutkan secara ascending berdasarkan code
+  const classOptions = useMemo(() => {
+    const sortedClasses = [...availableClasses].sort((a, b) => {
+      // Mengurutkan string kode kelas (P1A < P1B, P2A < P2B)
+      return a.code.localeCompare(b.code);
     });
-  };
 
-  // Handler Tombol Cancel (X) di kolom kanan
-  const handleCancelPlacement = (record: PlacedStudent) => {
-    setState((prev) => ({
-      ...prev,
-      placedStudents: prev.placedStudents.filter((s) => s.nis !== record.nis),
-      selectedStudentsToPlace: prev.selectedStudentsToPlace.filter(
-        (nis) => nis !== record.nis
-      ),
+    return sortedClasses.map((c) => ({
+      value: c.id,
+      label: c.code,
+      grade: c.grade,
     }));
+  }, [availableClasses]);
+
+  // --- Konfigurasi Ant Design Table ---
+
+  const rowSelection = {
+    selectedRowKeys: selectedStudentKeys,
+    onChange: (selectedKeys: React.Key[]) => {
+      setSelectedStudentKeys(selectedKeys);
+    },
+    getCheckboxProps: (record: Student) => ({
+      disabled: placementData.some((p) => p.id === record.id),
+    }),
   };
-
-  const handleSaveChanges = () => {
-    notification.success({
-      message: "Penempatan Berhasil Disimpan",
-      description: `${state.placedStudents.length} siswa telah ditempatkan di kelas ${state.targetClass}.`,
-      duration: 3,
-    });
-  };
-
-  // Filter data untuk tabel kiri (Students in grade)
-  const filteredStudents = state.students.filter(
-    (student) =>
-      student.nis.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
-      student.studentName
-        .toLowerCase()
-        .includes(currentSearchTerm.toLowerCase())
-  );
-
-  // Filter data untuk tabel kanan (Class Placement)
-  const filteredPlacedStudents = state.placedStudents.filter(
-    (student) =>
-      student.nis.toLowerCase().includes(placedSearchTerm.toLowerCase()) ||
-      student.studentName.toLowerCase().includes(placedSearchTerm.toLowerCase())
-  );
-
-  // --- Kolom Table untuk Students in grade : 3 ---
-  const studentsColumns: TableProps<CurrentStudent>["columns"] = [
-    {
-      title: (
-        <Checkbox
-          checked={
-            // Cek apakah semua siswa yang terfilter sudah terpilih
-            filteredStudents.length > 0 &&
-            filteredStudents.every((s) =>
-              state.selectedStudentsToPlace.includes(s.nis)
-            )
-          }
-          indeterminate={
-            // Cek apakah sebagian siswa terfilter terpilih
-            filteredStudents.some((s) =>
-              state.selectedStudentsToPlace.includes(s.nis)
-            ) &&
-            !filteredStudents.every((s) =>
-              state.selectedStudentsToPlace.includes(s.nis)
-            )
-          }
-          onChange={(e) => {
-            if (e.target.checked) {
-              // Tambahkan semua NIS dari filteredStudents ke selectedStudentsToPlace
-              setState((prev) => ({
-                ...prev,
-                selectedStudentsToPlace: [
-                  ...new Set([
-                    ...prev.selectedStudentsToPlace,
-                    ...filteredStudents.map((s) => s.nis),
-                  ]),
-                ],
-              }));
-            } else {
-              // Hapus semua NIS dari filteredStudents dari selectedStudentsToPlace
-              const filteredNis = filteredStudents.map((s) => s.nis);
-              setState((prev) => ({
-                ...prev,
-                selectedStudentsToPlace: prev.selectedStudentsToPlace.filter(
-                  (nis) => !filteredNis.includes(nis)
-                ),
-              }));
-            }
-          }}
-        />
-      ),
-      dataIndex: "nis",
-      key: "checkbox",
-      width: 40,
-      render: (text: string, record: CurrentStudent) => (
-        <Checkbox
-          checked={state.selectedStudentsToPlace.includes(record.nis)}
-          onChange={(e) => handleStudentSelection(e.target.checked, record)}
-        />
-      ),
-    },
-    {
-      title: "NIS",
-      dataIndex: "nis",
-      key: "nis",
-    },
-    {
-      title: "Student Name",
-      dataIndex: "studentName",
-      key: "studentName",
-    },
-  ];
-
-  // --- Kolom Table untuk Class Placement ---
-  const placedColumns: TableProps<PlacedStudent>["columns"] = [
-    {
-      title: "NIS",
-      dataIndex: "nis",
-      key: "nis",
-    },
-    {
-      title: "Student Name",
-      dataIndex: "studentName",
-      key: "studentName",
-    },
-    {
-      title: "Cancel",
-      key: "cancel",
-      width: 80,
-      render: (_, record) => (
-        <Button
-          type="text"
-          danger
-          icon={
-            <CloseCircleOutlined
-              style={{ fontSize: "18px", color: "#e74c3c" }}
-            />
-          }
-          onClick={() => handleCancelPlacement(record)}
-          style={{ padding: 0 }}
-        />
-      ),
-    },
-  ];
 
   return (
-    <Layout
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "#fff",
-      }}
+    <div
+      style={{ padding: 24, minHeight: "100vh", backgroundColor: "#f0f2f5" }}
     >
-      {/* --- Header --- */}
-      <div
-        style={{
-          padding: "0 0 16px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Title level={2} style={{ margin: 0 }}>
-          Student Placement
-        </Title>
-        <Text strong style={{ fontSize: "24px" }}>
-          2024-2025
-        </Text>
-      </div>
+      <Spin spinning={loading} tip="Memuat Data atau Memproses Penempatan...">
+        {/* Header Path */}
+        <div style={{ padding: "0 0 16px 0" }}>
+          <Text type="secondary">Home / Student List / Placement</Text>
+        </div>
 
-      {/* --- Pilihan Grade Awal --- */}
-      <Row gutter={16} align="middle" style={{ marginBottom: 30 }}>
-        <Col>
-          <Text>Please set grade first</Text>
-        </Col>
-        <Col>
-          <Select
-            value={state.currentGrade}
-            onChange={handleCurrentGradeChange}
-            options={gradeOptions}
-            style={{ width: 80 }}
-          />
-        </Col>
-        <Col>
-          <Button
-            type="primary"
-            onClick={handleApplyGrade}
-            style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
-          >
-            Apply Grade
-          </Button>
-        </Col>
-      </Row>
+        {/* Title */}
+        <Row justify="space-between" align="top" style={{ marginBottom: 24 }}>
+          <Col>
+            <Title level={2} style={{ margin: 0 }}>
+              Student Placement
+            </Title>
+          </Col>
+          <Col>
+            <Title level={2} style={{ margin: 0, color: "#4096FF" }}>
+              {academicYear}
+            </Title>
+          </Col>
+        </Row>
 
-      {/* --- Kolom Siswa Grade Saat Ini & Penempatan Kelas --- */}
-      <Row gutter={24}>
-        {/* --- Kolom Kiri: Students in grade : 3 --- */}
-        <Col span={12}>
-          <Card
-            style={{ border: "1px solid #d9d9d9", borderRadius: 2 }}
-            bodyStyle={{ padding: 0 }}
-          >
-            <div style={{ padding: "16px", borderBottom: "1px solid #f0f0f0" }}>
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <Title level={4} style={{ margin: 0 }}>
-                    Students in grade : {state.currentGrade}
-                  </Title>
-                </Col>
-                <Col>
-                  <Text>
-                    Student Total : {state.totalStudentsInCurrentGrade}
-                  </Text>
-                </Col>
-              </Row>
-              <Input
-                placeholder="Search by NIS or Name"
-                prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
-                value={currentSearchTerm}
-                onChange={(e) => setCurrentSearchTerm(e.target.value)}
-                style={{ marginTop: 16 }}
-              />
-            </div>
-
-            <Table<CurrentStudent>
-              columns={studentsColumns}
-              dataSource={filteredStudents}
-              rowKey="nis"
-              pagination={false}
-              size="middle"
-              scroll={{ y: 300 }}
-              style={{ border: "none" }}
+        {/* Grade Selection */}
+        <Row gutter={16} align="middle" style={{ marginBottom: 40 }}>
+          <Col style={{ display: "flex", alignItems: "center" }}>
+            <Text style={{ marginRight: 8 }}>
+              Select current grade of students
+            </Text>
+          </Col>
+          <Col>
+            <Select
+              value={currentGrade}
+              style={{ minWidth: 120 }}
+              onChange={(value) => setCurrentGrade(value as GradeOption)}
+              options={["1", "2", "3", "4", "5", "6"].map((g) => ({
+                value: g,
+                label: g,
+              }))}
+              disabled={loading}
             />
-
-            <div
-              style={{
-                padding: 16,
-                textAlign: "center",
-                borderTop: "1px solid #f0f0f0",
-              }}
+          </Col>
+          <Col>
+            <Button
+              type="primary"
+              onClick={() => fetchStudents(currentGrade)}
+              disabled={loading}
             >
-              <Button
-                type="primary"
-                onClick={handleAddToClass}
-                style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
-              >
-                Add to Class
-              </Button>
-            </div>
-          </Card>
-        </Col>
+              Refresh List
+            </Button>
+          </Col>
+        </Row>
 
-        {/* --- Kolom Kanan: Class Placement --- */}
-        <Col span={12}>
-          <Card
-            style={{ border: "1px solid #d9d9d9", borderRadius: 2 }}
-            bodyStyle={{ padding: 0 }}
-          >
-            <div style={{ padding: "16px", borderBottom: "1px solid #f0f0f0" }}>
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <Space>
-                    <Title level={4} style={{ margin: 0 }}>
-                      Class Placement
-                    </Title>
-                    <Select
-                      value={state.targetClass}
-                      onChange={handleTargetClassChange}
-                      options={classOptions}
-                      style={{ width: 100 }}
-                    />
-                  </Space>
-                </Col>
-                <Col>
-                  <Text>
-                    Student Total :{" "}
-                    {
-                      // Hanya hitung siswa yang sudah ditempatkan di kelas TARGET saat ini
-                      state.placedStudents.filter(
-                        (s) => s.classId === state.targetClass
-                      ).length
-                    }
+        {/* Main Content: Two Cards */}
+        <Row gutter={24}>
+          {/* Kolom Kiri: Students in grade (Tersedia untuk ditempatkan) */}
+          <Col span={12}>
+            <Card
+              bordered={false}
+              title={
+                <Space size="large">
+                  <Text strong>Students in grade : {currentGrade}</Text>
+                  <Text type="secondary">
+                    Total : {filteredStudents.length}
                   </Text>
-                </Col>
-              </Row>
-              <Input
-                placeholder="Search by NIS or Name"
-                prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
-                value={placedSearchTerm}
-                onChange={(e) => setPlacedSearchTerm(e.target.value)}
-                style={{ marginTop: 16 }}
-              />
-            </div>
-
-            <Table<PlacedStudent>
-              columns={placedColumns}
-              // Filter data yang ditampilkan hanya untuk kelas yang dipilih
-              dataSource={filteredPlacedStudents.filter(
-                (s) => s.classId === state.targetClass
-              )}
-              rowKey="nis"
-              pagination={false}
-              size="middle"
-              scroll={{ y: 300 }}
-              style={{ border: "none" }}
-            />
-            <div
-              style={{
-                padding: 16,
-                textAlign: "center",
-                borderTop: "1px solid #f0f0f0",
-              }}
+                </Space>
+              }
             >
-              {/* Bagian ini kosong untuk menyamakan tinggi card kiri/kanan */}
-            </div>
-          </Card>
-        </Col>
-      </Row>
+              {/* Search Bar */}
+              <Input
+                placeholder="Search by NIS or Student Name"
+                prefix={<SearchOutlined />}
+                style={{ marginBottom: 16 }}
+                value={searchStudent}
+                onChange={(e) => setSearchStudent(e.target.value)}
+              />
 
-      {/* --- Footer Submit --- */}
-      <Row justify="center" style={{ marginTop: 30 }}>
-        <Col span={24}>
+              {/* Students Table */}
+              <Table
+                rowKey="key"
+                rowSelection={rowSelection}
+                columns={studentColumns}
+                dataSource={filteredStudents}
+                pagination={false}
+                size="small"
+                scroll={{ y: 300 }}
+                style={{ border: "1px solid #f0f0f0" }}
+              />
+
+              {/* Add to Class Button */}
+              <div style={{ marginTop: 16, textAlign: "center" }}>
+                <Button
+                  type="primary"
+                  style={{
+                    backgroundColor: "#52c41a",
+                    borderColor: "#52c41a",
+                    fontWeight: "bold",
+                  }}
+                  onClick={handleAddToClass}
+                  disabled={
+                    selectedStudentKeys.length === 0 ||
+                    loading ||
+                    !selectedClassId
+                  }
+                >
+                  Add to Class
+                </Button>
+              </div>
+            </Card>
+          </Col>
+
+          {/* Kolom Kanan: Class Placement (Kelas Tujuan) */}
+          <Col span={12}>
+            <Card
+              bordered={false}
+              title={
+                <Space size="large">
+                  <Text strong>Class Placement</Text>
+                  <Select
+                    value={selectedClassId}
+                    onChange={(value) => {
+                      setSelectedClassId(value);
+                      const selected = availableClasses.find(
+                        (c) => c.id === value
+                      );
+                      setSelectedClassName(
+                        selected ? selected.code : "Pilih Kelas"
+                      );
+                    }}
+                    options={classOptions} // Sudah diurutkan secara ascending
+                    style={{ minWidth: 100 }}
+                    disabled={loading}
+                  />
+                  <Text type="secondary">
+                    Total : {filteredPlacement.length}
+                  </Text>
+                </Space>
+              }
+            >
+              {/* Search Bar */}
+              <Input
+                placeholder="Search by NIS or Student Name"
+                prefix={<SearchOutlined />}
+                style={{ marginBottom: 16 }}
+                value={searchPlacement}
+                onChange={(e) => setSearchPlacement(e.target.value)}
+              />
+
+              {/* Placed Students Table */}
+              <Table
+                rowKey="key"
+                columns={placementColumns(handleRemoveFromPlacement)}
+                dataSource={filteredPlacement}
+                pagination={false}
+                size="small"
+                scroll={{ y: 300 }}
+                style={{ border: "1px solid #f0f0f0" }}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        {/* Submit Placement Section */}
+        <div style={{ marginTop: 40, textAlign: "center" }}>
           <div
             style={{
+              display: "inline-block",
+              padding: "24px 32px",
               backgroundColor: "#fffbe6",
               border: "1px solid #ffe58f",
-              padding: 16,
-              borderRadius: 2,
-              textAlign: "center",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+              borderRadius: 4,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.07)",
             }}
           >
-            <Text type="warning" strong style={{ color: "#faad14" }}>
-              Please kindly check before submit the **placement** !
+            <Text strong type="warning">
+              Please kindly check before submit the placement to **
+              {selectedClassName}** !
             </Text>
-            <div style={{ marginTop: 16 }}>
-              <Button
-                type="primary"
-                size="large"
-                onClick={handleSaveChanges}
-                style={{
-                  backgroundColor: "#1890ff",
-                  borderColor: "#1890ff",
-                  height: "40px",
-                }}
-              >
-                Save Changes
-              </Button>
-            </div>
           </div>
-        </Col>
-      </Row>
-
-      <style jsx global>{`
-        /* Mengganti warna header table Ant Design agar lebih mirip gambar */
-        .ant-table-thead > tr > th {
-          background-color: #f7f7f7 !important;
-        }
-        /* Menghapus border luar table */
-        .ant-table-container {
-          border: none !important;
-        }
-      `}</style>
-    </Layout>
+          <div style={{ marginTop: 16 }}>
+            <Button
+              type="primary"
+              size="large"
+              onClick={handleSubmitPlacement}
+              disabled={
+                placementData.length === 0 || loading || !selectedClassId
+              }
+              style={{
+                height: 50,
+                padding: "0 50px",
+                fontWeight: "bold",
+                fontSize: "16px",
+              }}
+            >
+              Submit Placement
+            </Button>
+          </div>
+        </div>
+      </Spin>
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
+    </div>
   );
 };
 
-export default StudentPlacementPage;
+export default StudentPlacement;

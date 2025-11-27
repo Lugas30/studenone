@@ -1,328 +1,327 @@
 "use client";
-// src/pages/knowledge-skill-input.tsx - Style Disesuaikan dengan GradeClassroomPage
 
-import React, { useState, useMemo } from "react";
-import Head from "next/head";
+// src/pages/KnowledgeSkillPage.tsx
+
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Table,
-  Input,
   Button,
+  Input,
   Select,
+  Row,
+  Col,
   Space,
-  Breadcrumb,
   Typography,
+  Pagination,
+  Spin,
+  Empty,
 } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
+import {
+  SearchOutlined,
+  EditOutlined,
+  EyeOutlined,
+  LoadingOutlined,
+} from "@ant-design/icons";
+import axios from "axios";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
-const { Title } = Typography;
-const { Option } = Select;
+// Pastikan path import ini benar
+import KnowledgeSkillFormModal from "../../components/KnowledgeSkillFormModal";
 
-// 1. Tipe Data (Disesuaikan untuk Knowledge & Skill Indicators)
-// =============================================================================
-interface SubjectData {
-  id: number;
-  subject: string;
-  teacher: string;
-  grade: number;
-  semester: "Ganjil" | "Genap";
-  // Menambahkan Indicator sesuai dengan kebutuhan halaman
-  knowledgeIndicator: string;
-  skillIndicator: string;
+const { Title, Text } = Typography;
+const { Search } = Input;
+
+// --- Definisi Tipe Data ---
+
+interface Subject {
+  name: string;
 }
 
-// 2. Data Dummy (Disesuaikan dengan Gambar)
-// =============================================================================
-const DUMMY_DATA: SubjectData[] = [
-  // Data Grade 2 (Sesuai Gambar)
-  {
-    id: 1,
-    subject: "PKN",
-    teacher: "Aulia Rahman",
-    grade: 2,
-    semester: "Ganjil",
-    // Data Knowledge & Skill Sesuai Gambar
-    knowledgeIndicator:
-      "Knowing the basic state of Pancasila, understanding ...",
-    skillIndicator: "Reading the 'Pancasila', singing the 'Indonesia ...",
-  },
-  {
-    id: 2,
-    subject: "PAI",
-    teacher: "Siti Aminah",
-    grade: 2,
-    semester: "Ganjil",
-    knowledgeIndicator: "-", // Sesuai Gambar
-    skillIndicator: "-", // Sesuai Gambar
-  },
-  {
-    id: 3,
-    subject: "Bahasa Indonesia",
-    teacher: "Aulia Rahman",
-    grade: 2,
-    semester: "Ganjil",
-    knowledgeIndicator: "-", // Sesuai Gambar
-    skillIndicator: "-", // Sesuai Gambar
-  },
-  {
-    id: 4,
-    subject: "Matematika",
-    teacher: "Fanny Ghaisani",
-    grade: 2,
-    semester: "Ganjil",
-    knowledgeIndicator: "-", // Sesuai Gambar
-    skillIndicator: "-", // Sesuai Gambar
-  },
-  {
-    id: 5,
-    subject: "Science",
-    teacher: "Budi Santoso",
-    grade: 2,
-    semester: "Ganjil",
-    knowledgeIndicator: "-", // Sesuai Gambar
-    skillIndicator: "-", // Sesuai Gambar
-  },
+interface IndicatorData {
+  id: number;
+  subject_id: number; // Tambahkan subject_id untuk modal edit
+  teacher: string;
+  grade: number;
+  knowledge: string;
+  skill: string;
+  subject: Subject;
+  key: string;
+}
 
-  // Data Tambahan untuk Grade lain
-  {
-    id: 6,
-    subject: "English",
-    teacher: "Joko Widodo",
-    grade: 1,
-    semester: "Ganjil",
-    knowledgeIndicator: "Basic greetings",
-    skillIndicator: "Introducing self",
-  },
-  {
-    id: 7,
-    subject: "Social Studies",
-    teacher: "Megawati",
-    grade: 3,
-    semester: "Ganjil",
-    knowledgeIndicator: "Understanding simple maps",
-    skillIndicator: "Drawing neighborhood maps",
-  },
-  {
-    id: 8,
-    subject: "Fisika",
-    teacher: "Dr. Einstein",
-    grade: 3,
-    semester: "Ganjil",
-    knowledgeIndicator: "Konsep dasar gaya",
-    skillIndicator: "Menganalisis gerak lurus",
-  },
-];
+interface ApiResponse {
+  academicYear: string;
+  semester: string;
+  data: IndicatorData[];
+}
 
-const gradeOptions = [1, 2, 3]; // Daftar Grade yang tersedia
+interface InitialFormData {
+  id?: number;
+  subject_id: number;
+  grade: number;
+  knowledge: string;
+  skill: string;
+}
 
-// 3. Komponen Halaman Utama
-// =============================================================================
+// --- Konfigurasi ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const INDICATOR_ENDPOINT = "/indicator-knowledge-skill";
+const gradeOptions = [1, 2, 3, 4, 5, 6].map((grade) => ({
+  value: grade,
+  label: `Grade ${grade}`,
+}));
+
+// --- Komponen Halaman Utama ---
+
 const KnowledgeSkillPage: React.FC = () => {
-  const [selectedGrade, setSelectedGrade] = useState<number>(2); // Default ke Grade 2
-  const [searchTerm, setSearchTerm] = useState("");
+  const [data, setData] = useState<IndicatorData[]>([]);
+  const [academicInfo, setAcademicInfo] = useState<{
+    year: string;
+    semester: string;
+  } | null>(null);
+  const [selectedGrade, setSelectedGrade] = useState<number>(2);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  // Handle ketika tombol 'Input' atau 'View' diklik
-  const handleAction = (action: "Input" | "View", record: SubjectData) => {
-    alert(`${action} mata pelajaran: ${record.subject} oleh ${record.teacher}`);
+  // State untuk Modal Add/Edit
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editData, setEditData] = useState<InitialFormData | undefined>(
+    undefined
+  );
+
+  // --- Fetch Data ---
+  const fetchDataByGrade = useCallback(async (grade: number) => {
+    if (!API_BASE_URL) {
+      toast.error("API Base URL tidak ditemukan di .env!");
+      return;
+    }
+
+    setLoading(true);
+    setData([]);
+
+    try {
+      const response = await axios.get<ApiResponse>(
+        `${API_BASE_URL}${INDICATOR_ENDPOINT}/grade/${grade}`
+      );
+
+      const apiData = response.data;
+
+      const mappedData: IndicatorData[] = apiData.data.map((item) => ({
+        ...item,
+        key: item.id.toString(),
+      }));
+
+      setData(mappedData);
+      setAcademicInfo({
+        year: apiData.academicYear,
+        semester: apiData.semester,
+      });
+    } catch (error) {
+      console.error("Gagal mengambil data:", error);
+      toast.error("Gagal memuat data dari server.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Effect untuk memuat data saat grade berubah
+  useEffect(() => {
+    fetchDataByGrade(selectedGrade);
+  }, [fetchDataByGrade, selectedGrade]);
+
+  // --- Modal Handlers ---
+
+  const handleGradeChange = (value: number) => {
+    setSelectedGrade(value);
   };
 
-  // Definisi Kolom Tabel Ant Design (Disesuaikan untuk Knowledge & Skill)
-  const columns: ColumnsType<SubjectData> = [
+  const handleAdd = () => {
+    setEditData(undefined); // Reset ke mode Add
+    setIsModalOpen(true);
+  };
+
+  const handleEdit = (record: IndicatorData) => {
+    // Set data yang akan diedit
+    setEditData({
+      id: record.id,
+      subject_id: record.subject_id,
+      grade: record.grade,
+      knowledge: record.knowledge,
+      skill: record.skill,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleView = (id: number) => {
+    console.log(`Melihat detail ID: ${id}`);
+    toast.info(`Melihat detail ID: ${id}`);
+  };
+
+  const handleModalSuccess = (mode: "add" | "edit") => {
+    // Muat ulang data tabel setelah Add/Edit sukses
+    fetchDataByGrade(selectedGrade);
+  };
+
+  // --- Konfigurasi Kolom Tabel ---
+  const columns = [
     {
       title: "Subject",
-      dataIndex: "subject",
+      dataIndex: ["subject", "name"],
       key: "subject",
-      sorter: (a, b) => a.subject.localeCompare(b.subject),
-      width: "15%", // Dikecilkan untuk memberi ruang Knowledge/Skill
+      sorter: (a: IndicatorData, b: IndicatorData) =>
+        a.subject.name.localeCompare(b.subject.name),
+      render: (text: string) => text || "-",
     },
     {
       title: "Teacher",
       dataIndex: "teacher",
       key: "teacher",
-      width: "15%", // Dikecilkan
+      sorter: (a: IndicatorData, b: IndicatorData) =>
+        a.teacher.localeCompare(b.teacher),
     },
     {
-      title: "Knowledge", // Kolom Baru
-      dataIndex: "knowledgeIndicator",
-      key: "knowledgeIndicator",
-      width: "25%",
-      // Menggunakan render untuk memastikan tampilan "-" jika data kosong (meskipun sudah di dummy)
+      title: "Knowledge",
+      dataIndex: "knowledge",
+      key: "knowledge",
+      ellipsis: true,
       render: (text: string) => text || "-",
     },
     {
-      title: "Skill", // Kolom Baru
-      dataIndex: "skillIndicator",
-      key: "skillIndicator",
-      width: "25%",
+      title: "Skill",
+      dataIndex: "skill",
+      key: "skill",
+      ellipsis: true,
       render: (text: string) => text || "-",
     },
     {
-      title: "Action",
-      key: "action",
-      render: (_, record) => (
+      title: "Actions",
+      key: "actions",
+      render: (text: string, record: IndicatorData) => (
         <Space size="middle">
-          <Button type="primary" onClick={() => handleAction("Input", record)}>
-            Input
-          </Button>
+          {/* Icon Edit (Pensil) */}
           <Button
-            // Warna View dikembalikan menjadi hijau (#52c41a)
-            type="primary"
-            style={{
-              backgroundColor: "#52c41a",
-              borderColor: "#52c41a",
-              color: "white",
-            }}
-            onClick={() => handleAction("View", record)}
-          >
-            View
-          </Button>
+            icon={<EditOutlined style={{ color: "#1890ff" }} />}
+            onClick={() => handleEdit(record)} // Memanggil handler Edit
+            type="text"
+          />
+          {/* Icon View (Mata) */}
+          <Button
+            icon={<EyeOutlined style={{ color: "#1890ff" }} />}
+            onClick={() => handleView(record.id)}
+            type="text"
+          />
         </Space>
       ),
-      width: "20%", // Dikecilkan
     },
   ];
 
-  // Logika Filtering dan Searching menggunakan useMemo
-  const filteredData = useMemo(() => {
-    // 1. Filter berdasarkan Grade yang dipilih
-    const gradeFiltered = DUMMY_DATA.filter(
-      (item) => item.grade === selectedGrade
-    );
-
-    // 2. Filter berdasarkan Search Term (Subject atau Teacher)
-    if (!searchTerm) {
-      return gradeFiltered;
-    }
-
-    const lowerCaseSearch = searchTerm.toLowerCase();
-    return gradeFiltered.filter(
-      (item) =>
-        item.subject.toLowerCase().includes(lowerCaseSearch) ||
-        item.teacher.toLowerCase().includes(lowerCaseSearch)
-    );
-  }, [selectedGrade, searchTerm]);
-
-  // Aksi ketika tombol Apply Filter diklik
-  const handleApplyFilter = () => {
-    console.log(`Filter applied for Grade: ${selectedGrade}`);
-  };
-
-  const currentAcademicYear = "2024-2025";
-  const currentSemester = "Ganjil";
-
   return (
-    <>
-      <Head>
-        <title>Indicator Input | Knowledge & Skill</title>
-      </Head>
+    <div style={{ padding: "24px" }}>
+      {/* Toastify Container */}
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
 
-      {/* Konten Halaman */}
-      <div>
-        {/* 1. Breadcrumb (Style Mirip GradeClassroomPage) */}
-        <Breadcrumb
-          items={[{ title: "Home" }, { title: "Indicator Input" }]} // Disesuaikan dengan gambar
-        />
-
-        {/* 2. Title dan Tahun Akademik (Style Mirip GradeClassroomPage) */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            margin: "16px 0 24px 0",
-          }}
-        >
-          <Title level={1} style={{ margin: 0 }}>
+      {/* Header Utama */}
+      <Text type="secondary">Home / Indicator Input</Text>
+      <Row
+        justify="space-between"
+        align="middle"
+        style={{ marginTop: "4px", marginBottom: "16px" }}
+      >
+        <Col>
+          <Title level={2} style={{ margin: 0 }}>
             Knowledge & Skill
           </Title>
-          <Title level={3} style={{ color: "#888", margin: 0 }}>
-            <span style={{ fontWeight: 700, color: "#333" }}>
-              {currentAcademicYear}
-            </span>{" "}
-            ({currentSemester})
-          </Title>
-        </div>
+        </Col>
+        <Col>
+          <Text style={{ fontSize: "24px", fontWeight: "bold" }}>
+            {academicInfo
+              ? `${academicInfo.year} (${academicInfo.semester})`
+              : "Memuat..."}
+          </Text>
+        </Col>
+      </Row>
 
-        {/* 3. Filter and Search Section (Toolbar Ramping) */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginBottom: "24px",
-          }}
-        >
-          {/* Group Kiri: Search Input */}
+      {/* Control Bar (Search, Grade, Add Button) */}
+      <Row gutter={[16, 16]} align="middle" style={{ marginBottom: "20px" }}>
+        <Col flex="auto">
           <Input
-            placeholder="Search customer 100 records..." // Disesuaikan dengan Gambar
+            placeholder="Search customer 100 records..."
             prefix={<SearchOutlined />}
-            style={{ width: 300 }}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ maxWidth: 300 }}
           />
-
-          {/* Group Kanan: Filter dan Tombol */}
+        </Col>
+        <Col>
           <Space>
+            {/* Dropdown Grade */}
             <Select
-              placeholder="Grade" // Disesuaikan dengan Gambar
-              style={{ width: 120 }}
               value={selectedGrade}
-              onChange={(value) => setSelectedGrade(value)}
-            >
-              {gradeOptions.map((grade) => (
-                <Option key={grade} value={grade}>
-                  Grade
-                </Option> // Opsi disederhanakan menjadi "Grade" saja
-              ))}
-            </Select>
+              style={{ width: 120 }}
+              onChange={handleGradeChange}
+              options={gradeOptions}
+              disabled={loading}
+            />
+            {/* Button Add */}
             <Button
               type="primary"
-              onClick={handleApplyFilter}
-              // Warna Apply Filter disesuaikan menjadi hijau (#52c41a)
-              style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
+              onClick={handleAdd}
+              style={{ backgroundColor: "#1890ff", borderColor: "#1890ff" }}
             >
-              Apply Filter
+              + Add Knowledge & Skill
             </Button>
-            {/* Tombol Search (Dihilangkan, tidak ada di gambar) */}
           </Space>
-        </div>
+        </Col>
+      </Row>
 
-        {/* 4. Grade Indicator & Table Container */}
-        <div
-          style={{
-            border: "1px solid #f0f0f0",
-            borderRadius: "4px",
-            backgroundColor: "#fff",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            padding: "24px 24px 16px 24px",
-            marginBottom: "24px",
-          }}
+      {/* Tabel Data */}
+      <div style={{ border: "1px solid #f0f0f0", borderRadius: "2px" }}>
+        <Spin
+          spinning={loading}
+          indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />}
+          tip="Memuat data..."
         >
-          {selectedGrade !== undefined && (
-            <Title
-              level={4}
-              style={{
-                fontWeight: 600,
-                marginBottom: "16px",
-                padding: "0 0 8px 0",
-                borderBottom: "1px solid #f0f0f0",
-              }}
-            >
-              Grade : {selectedGrade}
-            </Title>
-          )}
-
-          {/* Table Section */}
-          <Table<SubjectData>
+          <Table
             columns={columns}
-            dataSource={filteredData}
-            rowKey="id"
+            dataSource={data}
             pagination={false}
-            size="large"
-            style={{ width: "100%", marginTop: "8px" }}
+            size="middle"
+            locale={{
+              emptyText: (
+                <Empty description="Tidak ada data indikator untuk Grade ini" />
+              ),
+            }}
           />
-        </div>
+        </Spin>
       </div>
-    </>
+
+      {/* Pagination Bar */}
+      <Row justify="start" style={{ marginTop: "16px" }}>
+        <Pagination
+          defaultCurrent={1}
+          total={data.length > 0 ? data.length * 10 : 50}
+          pageSize={10}
+          showSizeChanger={false}
+          style={{ padding: "8px 0" }}
+        />
+      </Row>
+
+      {/* Komponen Modal Add/Edit */}
+      <KnowledgeSkillFormModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleModalSuccess}
+        activeGrade={selectedGrade}
+        initialData={editData}
+      />
+    </div>
   );
 };
 
