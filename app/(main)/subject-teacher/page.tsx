@@ -1,386 +1,408 @@
+// SubjectTeacherPage.tsx (atau src/app/subject-teacher/page.tsx)
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import axios from "axios";
-import { toast } from "react-toastify"; // Import toast dari react-toastify
 import {
   Table,
   Button,
   Input,
   Space,
+  Typography,
+  Select,
   Row,
   Col,
-  Breadcrumb,
-  Dropdown,
-  Menu,
   Pagination,
-  Spin, // Tambahkan Spin untuk loading
+  Layout,
+  message,
+  Spin,
 } from "antd";
 import {
   SearchOutlined,
-  DownloadOutlined,
+  PlusOutlined,
   EyeOutlined,
   EditOutlined,
-  CaretDownOutlined,
+  DownloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { MenuProps } from "antd";
+import AddEditSubjectTeacherModal, {
+  InitialSubjectTeacherData,
+} from "../../components/AddEditSubjectTeacherModal"; // PASTIKAN PATH INI BENAR
 
-// Ambil URL dasar dari .env
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-const API_ENDPOINT = "/subject-teachers";
+const { Title, Text } = Typography;
+const { Content } = Layout;
 
-// --- I. Data Types (Interface) ---
-// Perbarui interface SubjectTeacherData sesuai dengan format yang akan digunakan untuk tabel
-export interface SubjectTeacherData {
+// --- 1. Definisi Tipe Data (Interfaces) Sesuai Respon API ---
+
+// Interface untuk data Classroom
+interface Classroom {
+  code: string;
+  id: number; // Ditambahkan agar bisa mencari ID saat Edit
+}
+
+// Interface untuk subject_teacher_classes
+interface SubjectTeacherClass {
+  classroom: Classroom;
+}
+
+// Interface untuk data Subject
+interface Subject {
+  name: string;
+  id: number; // Ditambahkan untuk kebutuhan Edit
+}
+
+// Interface untuk data Teacher
+interface Teacher {
+  nip: string;
+  name: string;
+  id: number; // Ditambahkan untuk kebutuhan Edit
+}
+
+// Interface untuk item data Subject Teacher (Data mentah dari API)
+interface ApiSubjectTeacherData {
   id: number;
-  NIP: string;
+  teacher_id: number; // ID Guru mentah
+  subject_id: number; // ID Mapel mentah
+  is_ganjil: boolean;
+  is_genap: boolean;
+  subject: Subject;
+  teacher: Teacher;
+  subject_teacher_classes: SubjectTeacherClass[];
+}
+
+// Interface untuk respon utama dari API
+interface ApiResponse {
+  academicYear: string;
+  data: ApiSubjectTeacherData[];
+}
+
+// Interface untuk data yang sudah di-format untuk tampilan tabel
+interface FormattedSubjectTeacher {
+  key: number;
+  nip: string;
   teacherName: string;
   subjects: string;
   classList: string;
-  semester: "Ganjil" | "Genap" | "N/A";
+  semester: "Ganjil" | "Genap" | "-";
+  // Tambahkan properti API mentah untuk mempermudah handler edit
+  raw: ApiSubjectTeacherData;
 }
 
-// Interface untuk data dari API (opsional, tapi bagus untuk type safety)
-interface ApiSubjectTeacher {
-  id: number;
-  is_ganjil: boolean;
-  is_genap: boolean;
-  subject: {
-    name: string;
-  };
-  teacher: {
-    nip: string;
-    name: string;
-  };
-  subject_teacher_classes: {
-    classroom: {
-      code: string;
-    };
-  }[];
-}
-
-interface ApiResponse {
-  academicYear: string;
-  data: ApiSubjectTeacher[];
-}
-
-// --- II. Definisi Kolom Tabel ---
-const columns: ColumnsType<SubjectTeacherData> = [
-  {
-    title: "NIP",
-    dataIndex: "NIP",
-    key: "NIP",
-    sorter: (a, b) => a.NIP.localeCompare(b.NIP),
-    width: 120,
-  },
-  {
-    title: "Teacher Name",
-    dataIndex: "teacherName",
-    key: "teacherName",
-    sorter: (a, b) => a.teacherName.localeCompare(b.teacherName),
-  },
-  {
-    title: "Subjects",
-    dataIndex: "subjects",
-    key: "subjects",
-    sorter: (a, b) => a.subjects.localeCompare(b.subjects),
-  },
-  {
-    title: "Class List",
-    dataIndex: "classList",
-    key: "classList",
-    sorter: (a, b) => a.classList.localeCompare(b.classList),
-  },
-  {
-    title: "Semester",
-    dataIndex: "semester",
-    key: "semester",
-    sorter: (a, b) => a.semester.localeCompare(b.semester),
-    width: 100,
-  },
-  {
-    title: "Actions",
-    key: "actions",
-    width: 150,
-    render: (_, record) => (
-      <Space size="middle">
-        {/* Tombol View */}
-        <Button
-          type="text"
-          icon={<EyeOutlined style={{ color: "#1890ff" }} />}
-          onClick={() => toast.info(`View data ${record.NIP}`)} // Contoh Toastify
-        />
-        {/* Tombol Edit */}
-        <Button
-          type="text"
-          icon={<EditOutlined style={{ color: "#1890ff" }} />}
-          onClick={() => toast.warn(`Edit data ${record.NIP}`)} // Contoh Toastify
-        />
-      </Space>
-    ),
-  },
-];
-
-// --- III. Komponen Subject Teacher ---
+// --- 2. Komponen Utama ---
 const SubjectTeacherPage: React.FC = () => {
-  const [data, setData] = useState<SubjectTeacherData[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [academicYear, setAcademicYear] = useState("");
+  // State untuk data dan status
+  const [academicYear, setAcademicYear] = useState("2024-2025");
+  const [tableData, setTableData] = useState<FormattedSubjectTeacher[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // State Pagination (biarkan default untuk simulasi Ant Design/tampilan)
-  const [pageSize, setPageSize] = useState(10);
+  // State untuk Modal Add/Edit
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editData, setEditData] = useState<InitialSubjectTeacherData | null>(
+    null
+  );
+
+  // State untuk Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = 50; // Asumsi total halaman
-  const totalRecords = totalPages * pageSize; // Simulasi total records
+  const [pageSize, setPageSize] = useState(10);
+  const [totalData, setTotalData] = useState(0);
 
-  /**
-   * Fungsi untuk memproses data dari API ke format SubjectTeacherData
-   * @param apiData Data dari respons API
-   * @returns Data dalam format SubjectTeacherData[]
-   */
-  const transformData = (
-    apiData: ApiSubjectTeacher[]
-  ): SubjectTeacherData[] => {
-    return apiData.map((item) => ({
-      id: item.id,
-      NIP: item.teacher.nip || "N/A",
-      teacherName: item.teacher.name || "N/A",
-      subjects: item.subject.name || "N/A",
-      // Gabungkan semua kode kelas
-      classList: item.subject_teacher_classes
-        .map((cls) => cls.classroom.code)
-        .join(", "),
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "https://so-api.queensland.id/api";
+
+  // Fungsi untuk memproses data dari API ke format tabel
+  const formatData = (
+    data: ApiSubjectTeacherData[]
+  ): FormattedSubjectTeacher[] => {
+    return data.map((item) => {
+      // Gabungkan kode kelas (misal: P1A, P3A)
+      const classList = item.subject_teacher_classes
+        .map((stc) => stc.classroom.code)
+        .join(", ");
+
       // Tentukan semester
-      semester: item.is_ganjil ? "Ganjil" : item.is_genap ? "Genap" : "N/A",
-    }));
+      const semester = item.is_ganjil
+        ? "Ganjil"
+        : item.is_genap
+        ? "Genap"
+        : "-";
+
+      return {
+        key: item.id,
+        nip: item.teacher.nip,
+        teacherName: item.teacher.name,
+        subjects: item.subject.name,
+        classList: classList,
+        semester: semester,
+        raw: item, // Simpan data mentah untuk kebutuhan Edit
+      };
+    });
   };
 
-  /**
-   * Fungsi untuk mengambil data dari API
-   */
+  // Fungsi untuk mengambil data dari API
   const fetchData = useCallback(async () => {
-    if (!BASE_URL) {
-      toast.error("NEXT_PUBLIC_API_URL tidak ditemukan di .env!");
-      return;
-    }
-
     setLoading(true);
+    setError(null);
     try {
-      const url = `${BASE_URL}${API_ENDPOINT}`;
-      const response = await axios.get<ApiResponse>(url);
+      const response = await fetch(`${API_URL}/subject-teachers`);
 
-      const transformedData = transformData(response.data.data);
-      setData(transformedData);
-      setAcademicYear(response.data.academicYear);
-
-      toast.success("Data Subject Teacher berhasil dimuat! 🎉");
-    } catch (error) {
-      let errorMessage = "Gagal memuat data Subject Teacher.";
-      if (axios.isAxiosError(error) && error.response) {
-        // Asumsi API mengembalikan pesan error dalam response.data.message/error
-        errorMessage = `Gagal memuat data: ${error.response.status} - ${
-          error.response.data.message ||
-          error.response.data.error ||
-          "Server Error"
-        }`;
-      } else {
-        errorMessage = `Gagal memuat data: ${
-          error instanceof Error ? error.message : "Kesalahan tidak diketahui"
-        }`;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      toast.error(errorMessage);
-      console.error("Fetch Data Error:", error);
-      setData([]); // Kosongkan data jika gagal
+      const result: ApiResponse = await response.json();
+
+      setAcademicYear(result.academicYear);
+      const formatted = formatData(result.data);
+
+      // Atur ulang halaman jika total data berubah dan melebihi halaman saat ini
+      const maxPages = Math.ceil(formatted.length / pageSize);
+      if (currentPage > maxPages && maxPages > 0) {
+        setCurrentPage(maxPages);
+      }
+
+      setTableData(formatted);
+      setTotalData(formatted.length);
+    } catch (err) {
+      console.error("Failed to fetch subject teachers:", err);
+      setError("Gagal mengambil data dari server.");
+      message.error("Gagal memuat data. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
-  }, []); // Dependensi kosong, hanya dijalankan sekali saat mount
+  }, [API_URL, currentPage, pageSize]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // --- Fungsi dan Konfigurasi Pagination (TETAP SAMA) ---
-  const handlePageChange = (page: number, size: number) => {
-    setCurrentPage(page);
-    setPageSize(size);
-    // TODO: Implementasi logika fetch data API dengan parameter page dan size di sini
-    toast.info(`Mengubah ke halaman ${page} dengan ${size} baris.`);
+  // Logika Pagination di Front-end
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedData = tableData.slice(startIndex, endIndex);
+
+  // --- Handler CRUD ---
+  const handleAdd = () => {
+    setEditData(null); // Set ke mode Add
+    setIsModalOpen(true);
   };
 
-  const menu: MenuProps["items"] = [
-    { key: "10", label: "10", onClick: () => setPageSize(10) },
-    { key: "20", label: "20", onClick: () => setPageSize(20) },
-    { key: "50", label: "50", onClick: () => setPageSize(50) },
+  const handleEdit = (record: FormattedSubjectTeacher) => {
+    // Mengubah data tabel menjadi format yang dibutuhkan modal (InitialSubjectTeacherData)
+
+    // Ekstrak ID kelas dari data mentah
+    const classroomIds = record.raw.subject_teacher_classes.map(
+      (stc) => stc.classroom.id
+    );
+
+    const dataForEdit: InitialSubjectTeacherData = {
+      id: record.key,
+      teacher_id: record.raw.teacher_id,
+      subject_id: record.raw.subject_id,
+      classroom_ids: classroomIds,
+      is_ganjil: record.raw.is_ganjil,
+      is_genap: record.raw.is_genap,
+    };
+
+    setEditData(dataForEdit);
+    setIsModalOpen(true);
+  };
+
+  const handleSuccess = () => {
+    fetchData(); // Panggil ulang fungsi fetch data untuk refresh tabel
+  };
+
+  const handlePaginationChange = (page: number, newPageSize?: number) => {
+    setCurrentPage(page);
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize);
+      setCurrentPage(1); // Kembali ke halaman 1 saat mengubah page size
+    }
+  };
+
+  // Definisikan kolom untuk Ant Design Table
+  const columns: ColumnsType<FormattedSubjectTeacher> = [
+    {
+      title: "NIP",
+      dataIndex: "nip",
+      key: "nip",
+      sorter: (a, b) => a.nip.localeCompare(b.nip),
+      width: 120,
+    },
+    {
+      title: "Teacher Name",
+      dataIndex: "teacherName",
+      key: "teacherName",
+      sorter: (a, b) => a.teacherName.localeCompare(b.teacherName),
+    },
+    {
+      title: "Subjects",
+      dataIndex: "subjects",
+      key: "subjects",
+    },
+    {
+      title: "Class List",
+      dataIndex: "classList",
+      key: "classList",
+    },
+    {
+      title: "Semester",
+      dataIndex: "semester",
+      key: "semester",
+      width: 100,
+      sorter: (a, b) => a.semester.localeCompare(b.semester),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      width: 100,
+      align: "center",
+      render: (_, record) => (
+        <Space size="middle">
+          <Button
+            type="text"
+            icon={<EyeOutlined style={{ color: "#1890ff" }} />}
+            onClick={() => console.log("View", record.key)}
+          />
+          <Button
+            type="text"
+            icon={<EditOutlined style={{ color: "#1890ff" }} />}
+            onClick={() => handleEdit(record)} // Memanggil handler edit
+          />
+        </Space>
+      ),
+    },
   ];
 
-  // itemRender untuk kustomisasi tampilan pagination Ant Design (dapat dihapus jika tidak diperlukan)
-  const itemRender = (
-    page: number,
-    type: "page" | "prev" | "next" | "jump-prev" | "jump-next",
-    originalElement: React.ReactNode
-  ) => {
-    if (type === "page") {
-      return (
-        <span
-          onClick={() => setCurrentPage(page)}
-          style={{
-            border:
-              page === currentPage ? "1px solid #1890ff" : "1px solid #d9d9d9",
-            color: page === currentPage ? "#1890ff" : "rgba(0, 0, 0, 0.65)",
-            backgroundColor: page === currentPage ? "#e6f7ff" : "white",
-            borderRadius: "4px",
-            padding: "0 8px",
-            cursor: "pointer",
-            margin: "0 4px",
-          }}
-        >
-          {page}
-        </span>
-      );
-    }
-    return originalElement;
-  };
-  // --- Akhir Fungsi Pagination ---
-
   return (
-    <div style={{ padding: "24px" }}>
-      {/* Header dan Breadcrumb */}
-      <Breadcrumb style={{ marginBottom: "20px" }}>
-        <Breadcrumb.Item>Home</Breadcrumb.Item>
-        <Breadcrumb.Item>Subject Teacher</Breadcrumb.Item>
-      </Breadcrumb>
-
-      <Row
-        justify="space-between"
-        align="middle"
-        style={{ marginBottom: "20px" }}
-      >
+    <Layout style={{ padding: "24px", background: "#fff" }}>
+      {/* ➡️ Header (Breadcrumb dan Tahun Ajaran) */}
+      <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
         <Col>
-          <h1 style={{ margin: 0, fontSize: "30px", fontWeight: "bold" }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Home / Subject Teacher
+          </Text>
+          <Title
+            level={1}
+            style={{ margin: "8px 0 0 0", fontSize: 30, fontWeight: 500 }}
+          >
             Subject Teacher
-          </h1>
+          </Title>
         </Col>
         <Col>
-          <span style={{ fontSize: "30px", fontWeight: "bold" }}>
-            {academicYear || "Loading..."}
-          </span>
+          <Title level={2} style={{ margin: 0, fontWeight: 500 }}>
+            {academicYear}
+          </Title>
         </Col>
       </Row>
 
-      {/* --- Kontrol Atas (Search, Add Button, Download) --- */}
-      <Row
-        gutter={[16, 16]}
-        justify="space-between"
-        align="middle"
-        style={{ marginBottom: "20px" }}
-      >
-        <Col xs={24} md={12} lg={8}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+        <Col flex="auto">
           <Input
-            placeholder={`Search customer ${totalRecords} records...`}
-            prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.45)" }} />}
-            style={{ borderRadius: "6px" }}
+            placeholder={`Search ${totalData} records...`}
+            prefix={<SearchOutlined />}
+            style={{ width: 300 }}
+            allowClear
           />
         </Col>
         <Col>
           <Space>
             <Button
               type="primary"
-              onClick={() => toast.success("Menambah Subject Teacher")} // Contoh Toastify
-              style={{ fontWeight: "bold", borderRadius: "6px" }}
+              icon={<PlusOutlined />}
+              style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
+            >
+              Mass Upload
+            </Button>
+            {/* Tombol Add Subject Teacher Dihubungkan ke Modal */}
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleAdd} // Memanggil handler add
             >
               Add Subject Teacher
             </Button>
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={() => toast.info("Mengunduh data...")} // Contoh Toastify
-              style={{ borderRadius: "6px" }}
+            <Button icon={<DownloadOutlined />} />
+          </Space>
+        </Col>
+      </Row>
+
+      {/* --- Tabel Data --- */}
+      <Content style={{ minHeight: 400 }}>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "50px" }}>
+            <Spin size="large" tip="Memuat Data..." />
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: "center", padding: "50px", color: "red" }}>
+            {error}
+          </div>
+        ) : (
+          <>
+            <Table
+              columns={columns}
+              dataSource={paginatedData}
+              rowKey="key"
+              pagination={false}
+              bordered
+              size="middle"
+              style={{ marginBottom: 16 }}
             />
-            {/* Tombol Refresh/Reload Data */}
-            <Button
-              icon={<SearchOutlined />}
-              onClick={fetchData}
-              loading={loading}
-              style={{ borderRadius: "6px" }}
-            >
-              Refresh
-            </Button>
-          </Space>
-        </Col>
-      </Row>
 
-      {/* --- Tabel --- */}
-      <div
-        style={{
-          border: "1px solid #f0f0f0",
-          borderRadius: "8px",
-          overflow: "hidden",
-        }}
-      >
-        <Spin spinning={loading} tip="Memuat data...">
-          <Table
-            columns={columns}
-            dataSource={data} // Gunakan data dari API
-            rowKey="id" // Gunakan ID unik dari API
-            pagination={false}
-            scroll={{ x: "max-content" }}
-          />
-        </Spin>
-      </div>
+            {/* --- Pagination Kustom --- */}
+            <Row justify="space-between" align="middle">
+              <Col>
+                <Space size="small">
+                  <Text>Row per page</Text>
+                  <Select
+                    value={pageSize}
+                    style={{ width: 70 }}
+                    options={[
+                      { value: 10, label: "10" },
+                      { value: 20, label: "20" },
+                      { value: 50, label: "50" },
+                    ]}
+                    onChange={(value) =>
+                      handlePaginationChange(currentPage, value)
+                    }
+                  />
+                  <Text>Go to</Text>
+                  <Input
+                    value={currentPage}
+                    onChange={(e) => {
+                      const maxPages = Math.ceil(totalData / pageSize);
+                      const value = parseInt(e.target.value);
+                      if (!isNaN(value) && value > 0 && value <= maxPages) {
+                        setCurrentPage(value);
+                      }
+                    }}
+                    style={{ width: 40, textAlign: "center" }}
+                  />
+                </Space>
+              </Col>
+              <Col>
+                <Pagination
+                  current={currentPage}
+                  pageSize={pageSize}
+                  total={totalData}
+                  onChange={handlePaginationChange}
+                  showSizeChanger={false}
+                  showQuickJumper={false}
+                />
+              </Col>
+            </Row>
+          </>
+        )}
+      </Content>
 
-      {/* --- Kontrol Bawah (Pagination) --- */}
-      <Row justify="space-between" align="middle" style={{ marginTop: "20px" }}>
-        <Col>
-          <Space>
-            {/* Dropdown Row per page */}
-            <Space>
-              <span>Row per page</span>
-              <Dropdown
-                overlay={
-                  <Menu items={menu} selectedKeys={[String(pageSize)]} />
-                }
-                trigger={["click"]}
-                placement="topCenter"
-              >
-                <Button style={{ padding: "0 8px" }}>
-                  {pageSize} <CaretDownOutlined />
-                </Button>
-              </Dropdown>
-            </Space>
-
-            {/* Input Go to */}
-            <Space>
-              <span>Go to</span>
-              <Input
-                value={currentPage}
-                onChange={(e) => {
-                  const page = Number(e.target.value);
-                  if (!isNaN(page) && page >= 1 && page <= totalPages) {
-                    setCurrentPage(page);
-                  }
-                }}
-                style={{ width: "50px", textAlign: "center" }}
-              />
-            </Space>
-          </Space>
-        </Col>
-
-        {/* Pagination Kustom */}
-        <Col>
-          <Pagination
-            current={currentPage}
-            pageSize={pageSize}
-            total={totalRecords}
-            showSizeChanger={false}
-            onChange={handlePageChange}
-            style={{ marginLeft: "auto" }}
-            itemRender={itemRender}
-          />
-        </Col>
-      </Row>
-    </div>
+      {/* --- Komponen Modal Add/Edit --- */}
+      <AddEditSubjectTeacherModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        initialData={editData}
+        onSuccess={handleSuccess} // Memuat ulang data setelah sukses
+      />
+    </Layout>
   );
 };
 

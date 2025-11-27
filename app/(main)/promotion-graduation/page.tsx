@@ -1,8 +1,8 @@
 "use client";
+// src/components/PromotionGraduationPage.tsx
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  Layout,
   Typography,
   Select,
   Button,
@@ -11,532 +11,507 @@ import {
   Card,
   Input,
   Table,
-  Checkbox,
   Space,
-  notification,
+  Alert,
+  Spin,
 } from "antd";
-import { SearchOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import type { TableProps } from "antd";
-
-// =======================================================
-// 1. DATA DUMMY & TYPESCRIPT INTERFACE (Digabungkan)
-// =======================================================
-
-export interface Student {
-  nis: string;
-  studentName: string;
-  status: "Active" | "Graduate";
-}
-
-export interface PromotedStudent {
-  nis: string;
-  studentName: string;
-  status: "Graduate";
-}
-
-// Data Dummy Identik dengan Gambar
-const studentsInGrade2: Student[] = [
-  { nis: "790841", studentName: "Aathirah Dhanesa Prayuda", status: "Active" },
-  { nis: "790842", studentName: "Abyan Mufid Shaquille", status: "Active" },
-  { nis: "798699", studentName: "Ahza Danendra Abdillah", status: "Active" },
-  {
-    nis: "790752",
-    studentName: "Akhtar Khairazky Subiyanto",
-    status: "Active",
-  },
-  { nis: "790955", studentName: "Aldeberan Kenan Arrazka", status: "Active" },
-  // Tambahkan data lain untuk simulasi
-  { nis: "791001", studentName: "Bima Satria Nusantara", status: "Active" },
-  { nis: "791002", studentName: "Citra Dewi Lestari", status: "Active" },
-];
-
-const promotedStudentsInitial: PromotedStudent[] = [
-  {
-    nis: "790841",
-    studentName: "Aathirah Dhanesa Prayuda",
-    status: "Graduate",
-  },
-  { nis: "790842", studentName: "Abyan Mufid Shaquille", status: "Graduate" },
-  {
-    nis: "798699",
-    studentName: "Ahza Danendra Abdillah Mutia",
-    status: "Graduate",
-  }, // Nama diperpanjang agar mirip gambar
-];
-
-const totalStudentsInGrade2 = 128;
-const currentGrade = 2;
-const nextGrade = 3;
-
-export type GradeValue = number | string;
-
-export interface PromotionState {
-  currentGrade: number;
-  newGrade: number;
-  students: Student[];
-  promotedStudents: PromotedStudent[];
-  selectedStudentsToPromote: string[];
-  totalStudentsInCurrentGrade: number;
-}
-
-// =======================================================
-// 2. KOMPONEN UTAMA NEXT.JS/REACT
-// =======================================================
+import { SearchOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import axios from "axios";
+import { toast } from "react-toastify";
 
 const { Title, Text } = Typography;
-const { Content } = Layout;
 
-// Fungsi untuk mendapatkan opsi grade
-const gradeOptions = Array.from({ length: 12 }, (_, i) => ({
-  value: i + 1,
-  label: String(i + 1),
-}));
+// --- 1. Definisi Tipe Data ---
+
+interface AcademicYear {
+  id: number;
+  year: string;
+  is_active: boolean;
+}
+
+interface Student {
+  id: number;
+  nis: string;
+  fullname: string;
+  // Memperbaiki/Mengkonfirmasi Literal Union Type
+  status_student: "active" | "graduated" | "new_student";
+  grade: string;
+  key: string;
+}
+
+type GradeOption = "new_student" | "1" | "2" | "3" | "4" | "5" | "6";
+type PostGradeOption = "1" | "2" | "3" | "4" | "5" | "6" | "graduated";
+
+// --- 2. Service API (Axios) ---
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
+const api = axios.create({
+  baseURL: BASE_URL,
+});
+
+// --- 3. Komponen Utama ---
 
 const PromotionGraduationPage: React.FC = () => {
-  const [state, setState] = useState<PromotionState>({
-    currentGrade: currentGrade,
-    newGrade: nextGrade,
-    students: studentsInGrade2,
-    promotedStudents: promotedStudentsInitial,
-    selectedStudentsToPromote: promotedStudentsInitial.map((s) => s.nis),
-    totalStudentsInCurrentGrade: totalStudentsInGrade2,
-  });
-  // State pencarian untuk tabel kiri
-  const [currentSearchTerm, setCurrentSearchTerm] = useState<string>("");
-  // State pencarian BARU untuk tabel kanan
-  const [promotedSearchTerm, setPromotedSearchTerm] = useState<string>("");
+  // --- State Management ---
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [activeAcademicYear, setActiveAcademicYear] =
+    useState<AcademicYear | null>(null);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
 
-  // Handler perubahan Grade Awal
-  const handleCurrentGradeChange = (value: GradeValue) => {
-    // Reset state promosi ketika grade diubah
-    setState((prev) => ({
-      ...prev,
-      currentGrade: Number(value),
-      // Dummy: Reset siswa untuk grade baru
-      students: studentsInGrade2,
-      promotedStudents: [],
-      selectedStudentsToPromote: [],
-    }));
-  };
+  const [loading, setLoading] = useState(false);
+  const [currentGrade, setCurrentGrade] = useState<GradeOption>("2");
+  const [newGrade, setNewGrade] = useState<PostGradeOption>("3");
 
-  const handleApplyGrade = () => {
-    notification.info({
-      message: "Grade Diterapkan",
-      description: `Menampilkan siswa untuk grade ${state.currentGrade}.`,
-    });
-  };
+  const [selectedStudentKeys, setSelectedStudentKeys] = useState<React.Key[]>(
+    []
+  );
+  const [promotedStudents, setPromotedStudents] = useState<Student[]>([]);
+  const [searchStudent, setSearchStudent] = useState<string>("");
+  const [searchPromoted, setSearchPromoted] = useState<string>("");
 
-  // Handler Checkbox di kolom kiri
-  const handleStudentSelection = (checked: boolean, student: Student) => {
-    setState((prev) => {
-      let updatedSelected: string[];
-      if (checked) {
-        if (!prev.selectedStudentsToPromote.includes(student.nis)) {
-          updatedSelected = [...prev.selectedStudentsToPromote, student.nis];
-        } else {
-          updatedSelected = prev.selectedStudentsToPromote;
-        }
-      } else {
-        updatedSelected = prev.selectedStudentsToPromote.filter(
-          (nis) => nis !== student.nis
-        );
+  // Grade Options untuk Select
+  const gradeOptions = [
+    { value: "new_student", label: "New Student" },
+    { value: "1", label: "1" },
+    { value: "2", label: "2" },
+    { value: "3", label: "3" },
+    { value: "4", label: "4" },
+    { value: "5", label: "5" },
+    { value: "6", label: "6" },
+  ];
+
+  const newGradeOptions = [
+    { value: "1", label: "1" },
+    { value: "2", label: "2" },
+    { value: "3", label: "3" },
+    { value: "4", label: "4" },
+    { value: "5", label: "5" },
+    { value: "6", label: "6" },
+    { value: "graduated", label: "Graduated" },
+  ];
+
+  // --- Fetch Data Hooks ---
+
+  // 3a. Fetch Academic Years
+  useEffect(() => {
+    const fetchAcademicYears = async () => {
+      try {
+        const response = await api.get("/academic-years");
+        const years: AcademicYear[] = response.data;
+        setAcademicYears(years);
+        const activeYear = years.find((y) => y.is_active);
+        setActiveAcademicYear(activeYear || null);
+      } catch (error) {
+        toast.error("Gagal memuat Tahun Akademik.");
+        console.error("Error fetching academic years:", error);
       }
-      return {
-        ...prev,
-        selectedStudentsToPromote: updatedSelected,
-      };
-    });
-  };
+    };
+    fetchAcademicYears();
+  }, []);
 
-  // Handler Tombol Add to New Grade
+  // 3b. Fetch Students based on Current Grade
+  const fetchStudents = useCallback(async (grade: GradeOption) => {
+    setLoading(true);
+    setAllStudents([]);
+    setPromotedStudents([]);
+    setSelectedStudentKeys([]);
+
+    const gradeParam = grade === "new_student" ? "new_student" : grade;
+
+    try {
+      const response = await api.get(
+        `/pag/students/status-grade-student/${gradeParam}`
+      );
+      const fetchedStudents: Student[] = response.data.data.map((s: any) => ({
+        id: s.id,
+        nis: s.nis || "N/A",
+        fullname: s.fullname,
+        // Asumsi data status_student dari API selalu sesuai dengan union type
+        status_student: s.status_student as
+          | "active"
+          | "graduated"
+          | "new_student",
+        grade: s.grade,
+        key: s.id.toString(),
+      }));
+      setAllStudents(fetchedStudents);
+      toast.success(
+        `Berhasil memuat ${
+          fetchedStudents.length
+        } siswa untuk Grade ${gradeParam.toUpperCase().replace("_", " ")}`
+      );
+    } catch (error) {
+      toast.error(
+        `Gagal memuat data siswa untuk Grade ${gradeParam
+          .toUpperCase()
+          .replace("_", " ")}.`
+      );
+      console.error("Error fetching students:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStudents(currentGrade);
+  }, [currentGrade, fetchStudents]);
+
+  // --- Logic Promosi Siswa ---
+
   const handleAddToNewGrade = () => {
-    setState((prev) => {
-      // Siswa yang dipilih yang belum ada di daftar promoted
-      const newStudentsToPromote = prev.students
-        .filter(
-          (s) =>
-            prev.selectedStudentsToPromote.includes(s.nis) &&
-            !prev.promotedStudents.some((ps) => ps.nis === s.nis)
-        )
-        .map((s) => ({
-          nis: s.nis,
-          studentName: s.studentName,
-          status: "Graduate" as const,
-        }));
+    // 1. Tentukan status siswa baru
+    const newStatus: "active" | "graduated" =
+      newGrade === "graduated" ? "graduated" : "active";
 
-      // Gabungkan dan pastikan NIS unik (untuk mencegah duplikasi jika kode diubah)
-      const updatedPromotedStudents = [
-        ...prev.promotedStudents,
-        ...newStudentsToPromote,
-      ];
+    // 2. Filter siswa yang dipilih dan buat objek baru
+    const studentsToPromote = allStudents
+      .filter((student) => selectedStudentKeys.includes(student.key))
+      .map((student) => ({
+        ...student,
+        // Override status_student dengan tipe literal yang valid
+        status_student: newStatus,
+      })) as Student[]; // <-- SOLUSI: Type Assertion untuk memastikan tipe kembalian
 
-      // Update selectedStudentsToPromote agar sesuai dengan promotedStudents
-      const updatedSelected = updatedPromotedStudents.map((s) => s.nis);
-
-      return {
-        ...prev,
-        promotedStudents: updatedPromotedStudents,
-        selectedStudentsToPromote: updatedSelected,
-      };
-    });
+    // 3. Update state
+    setPromotedStudents((prev) => [...prev, ...studentsToPromote]);
+    setSelectedStudentKeys([]);
+    toast.info(
+      `${studentsToPromote.length} siswa ditambahkan ke daftar promosi.`
+    );
   };
 
-  // Handler Tombol Cancel (X) di kolom kanan
-  const handleCancelPromotion = (record: PromotedStudent) => {
-    setState((prev) => ({
-      ...prev,
-      promotedStudents: prev.promotedStudents.filter(
-        (s) => s.nis !== record.nis
-      ),
-      selectedStudentsToPromote: prev.selectedStudentsToPromote.filter(
-        (nis) => nis !== record.nis
-      ),
-    }));
+  const handleCancelPromotion = (nis: string) => {
+    setPromotedStudents((prev) =>
+      prev.filter((student) => student.nis !== nis)
+    );
+    toast.warn(`Siswa dengan NIS ${nis} dibatalkan dari daftar promosi.`);
   };
 
-  const handleSubmitPromotion = () => {
-    notification.success({
-      message: "Promosi & Kelulusan Berhasil",
-      description: `${state.promotedStudents.length} siswa berhasil dipromosikan ke Grade ${state.newGrade}.`,
-      duration: 3,
-    });
+  // --- Submit Promosi ke API ---
+  const handleSubmitPromotion = async () => {
+    if (promotedStudents.length === 0) {
+      toast.error(
+        "Silakan pilih siswa untuk dipromosikan/lulus terlebih dahulu!"
+      );
+      return;
+    }
+    if (!activeAcademicYear) {
+      toast.error(
+        "Tahun Akademik aktif tidak ditemukan. Tidak dapat melakukan promosi."
+      );
+      return;
+    }
+
+    const studentIds = promotedStudents.map((s) => s.id);
+    const targetAcademicYearId = activeAcademicYear.id;
+
+    const postData = {
+      student_id: studentIds,
+      academic_year_id: targetAcademicYearId,
+      grade: newGrade,
+    };
+
+    setLoading(true);
+
+    try {
+      const response = await api.post(
+        "/pag/students/status-grade-student",
+        postData
+      );
+
+      if (response.data.message === "Promotion Success") {
+        toast.success("✅ Promosi/Kelulusan berhasil diajukan!");
+      } else {
+        toast.success(`Promosi berhasil diajukan: ${response.data.message}`);
+      }
+
+      await fetchStudents(currentGrade);
+      setPromotedStudents([]);
+      setSelectedStudentKeys([]);
+    } catch (error) {
+      let errorMessage = "Gagal memproses promosi. Silakan coba lagi.";
+      if (axios.isAxiosError(error) && error.response) {
+        errorMessage = error.response.data.message || errorMessage;
+      }
+      toast.error(`❌ ${errorMessage}`);
+      console.error("Submit Error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Filter data untuk tabel kiri (Students in grade)
-  const filteredStudents = state.students.filter(
-    (student) =>
-      student.nis.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
-      student.studentName
-        .toLowerCase()
-        .includes(currentSearchTerm.toLowerCase())
-  );
+  // --- Computed Values (Pencarian & Filtering UI) ---
 
-  // Filter data untuk tabel kanan (New Grade)
-  const filteredPromotedStudents = state.promotedStudents.filter(
-    (student) =>
-      student.nis.toLowerCase().includes(promotedSearchTerm.toLowerCase()) ||
-      student.studentName
-        .toLowerCase()
-        .includes(promotedSearchTerm.toLowerCase())
-  );
+  const filteredStudents = useMemo(() => {
+    const available = allStudents.filter(
+      (student) => !promotedStudents.some((p) => p.nis === student.nis)
+    );
+    return available.filter(
+      (student) =>
+        student.nis.includes(searchStudent) ||
+        student.fullname.toLowerCase().includes(searchStudent.toLowerCase())
+    );
+  }, [searchStudent, allStudents, promotedStudents]);
 
-  // --- Kolom Table untuk Students in grade : 2 ---
-  const studentsColumns: TableProps<Student>["columns"] = [
-    {
-      title: (
-        <Checkbox
-          checked={
-            state.selectedStudentsToPromote.length > 0 &&
-            filteredStudents.every((s) =>
-              state.selectedStudentsToPromote.includes(s.nis)
-            )
-          }
-          onChange={(e) => {
-            // Logika select all/unselect all pada data yang terfilter
-            if (e.target.checked) {
-              const newSelected = filteredStudents
-                .map((s) => s.nis)
-                .filter(
-                  (nis) => !state.selectedStudentsToPromote.includes(nis)
-                );
-              setState((prev) => ({
-                ...prev,
-                selectedStudentsToPromote: [
-                  ...prev.selectedStudentsToPromote,
-                  ...newSelected,
-                ],
-              }));
-            } else {
-              setState((prev) => ({
-                ...prev,
-                selectedStudentsToPromote:
-                  prev.selectedStudentsToPromote.filter(
-                    (nis) => !filteredStudents.map((s) => s.nis).includes(nis)
-                  ),
-              }));
-            }
-          }}
-        />
-      ),
-      dataIndex: "nis",
-      key: "checkbox",
-      width: 40,
-      render: (text: string, record: Student) => (
-        <Checkbox
-          checked={state.selectedStudentsToPromote.includes(record.nis)}
-          onChange={(e) => handleStudentSelection(e.target.checked, record)}
-        >
-          {/* Checkbox di Antd memiliki header kosong jika tidak ada title, jadi kita taruh NIS di kolom berikutnya */}
-        </Checkbox>
-      ),
-    },
-    {
-      title: "NIS",
-      dataIndex: "nis",
-      key: "nis",
-    },
-    {
-      title: "Student Name",
-      dataIndex: "studentName",
-      key: "studentName",
-    },
+  const filteredPromotedStudents = useMemo(() => {
+    return promotedStudents.filter(
+      (student) =>
+        student.nis.includes(searchPromoted) ||
+        student.fullname.toLowerCase().includes(searchPromoted.toLowerCase())
+    );
+  }, [searchPromoted, promotedStudents]);
+
+  // --- Konfigurasi Ant Design Table ---
+
+  const studentColumns: TableProps<Student>["columns"] = [
+    { title: "NIS", dataIndex: "nis", key: "nis", width: "20%" },
+    { title: "Student Name", dataIndex: "fullname", key: "fullname" },
     {
       title: "Status",
-      dataIndex: "status",
-      key: "status",
-      width: 100,
+      dataIndex: "status_student",
+      key: "status_student",
+      width: "20%",
+      render: (text) => (
+        <Text
+          type={
+            text === "active" || text === "new_student"
+              ? "success"
+              : "secondary"
+          }
+          strong
+        >
+          {text.toUpperCase().replace("_", " ")}
+        </Text>
+      ),
     },
   ];
 
-  // --- Kolom Table untuk New Grade ---
-  const promotedColumns: TableProps<PromotedStudent>["columns"] = [
-    {
-      title: "NIS",
-      dataIndex: "nis",
-      key: "nis",
-    },
-    {
-      title: "Student Name",
-      dataIndex: "studentName",
-      key: "studentName",
-    },
+  const promotedColumns: TableProps<Student>["columns"] = [
+    { title: "NIS", dataIndex: "nis", key: "nis", width: "20%" },
+    { title: "Student Name", dataIndex: "fullname", key: "fullname" },
     {
       title: "Status",
-      dataIndex: "status",
-      key: "status",
+      dataIndex: "status_student",
+      key: "status_student",
+      width: "20%",
+      render: (text) => (
+        <Text strong>{text.toUpperCase().replace("_", " ")}</Text>
+      ),
     },
     {
       title: "Cancel",
       key: "cancel",
-      width: 80,
+      width: "10%",
       render: (_, record) => (
         <Button
-          type="text"
           danger
-          icon={
-            <CloseCircleOutlined
-              style={{ fontSize: "18px", color: "#ff4d4f" }}
-            />
-          }
-          onClick={() => handleCancelPromotion(record)}
-          style={{ padding: 0 }}
+          type="text"
+          icon={<CloseCircleOutlined style={{ fontSize: "18px" }} />}
+          onClick={() => handleCancelPromotion(record.nis)}
         />
       ),
     },
   ];
 
+  const rowSelection = {
+    selectedRowKeys: selectedStudentKeys,
+    onChange: (selectedKeys: React.Key[]) => {
+      setSelectedStudentKeys(selectedKeys);
+    },
+    getCheckboxProps: (record: Student) => ({
+      disabled: promotedStudents.some((p) => p.nis === record.nis),
+    }),
+  };
+
+  // --- Render Component ---
+
   return (
-    <Layout style={{ minHeight: "100vh", background: "#fff" }}>
-      {/* --- Header --- */}
-      <div
-        style={{
-          padding: "0 0 16px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Title level={2} style={{ margin: 0 }}>
-          Promotion & Graduation
-        </Title>
-        <Text strong style={{ fontSize: "24px" }}>
-          2024-2025
-        </Text>
-      </div>
+    <div
+      style={{ padding: 24, minHeight: "100vh", backgroundColor: "#f0f2f5" }}
+    >
+      <Spin spinning={loading} tip="Memuat Data atau Memproses Promosi...">
+        {/* Header */}
+        <div style={{ padding: "0 0 16px 0" }}>
+          <Text type="secondary">Home / Student List</Text>
+        </div>
 
-      {/* --- Pilihan Grade Awal --- */}
-      <Row gutter={16} align="middle" style={{ marginBottom: 30 }}>
-        <Col>
-          <Text>Please set grade before first</Text>
-        </Col>
-        <Col>
-          <Select
-            value={state.currentGrade}
-            onChange={handleCurrentGradeChange}
-            options={gradeOptions}
-            style={{ width: 80 }}
-          />
-        </Col>
-        <Col>
-          <Button
-            type="primary"
-            onClick={handleApplyGrade}
-            style={{ backgroundColor: "#1890ff", borderColor: "#1890ff" }}
-          >
-            Apply Grade
-          </Button>
-        </Col>
-      </Row>
+        <Row justify="space-between" align="top" style={{ marginBottom: 24 }}>
+          <Col>
+            <Title level={2} style={{ margin: 0 }}>
+              Promotion & Graduation
+            </Title>
+          </Col>
+          <Col>
+            <Title level={2} style={{ margin: 0, color: "#4096FF" }}>
+              {activeAcademicYear ? activeAcademicYear.year : "Memuat..."}
+            </Title>
+          </Col>
+        </Row>
 
-      {/* --- Kolom Siswa Grade Saat Ini & Grade Baru --- */}
-      <Row gutter={24}>
-        {/* --- Kolom Kiri: Students in grade : 2 --- */}
-        <Col span={12}>
-          <Card
-            style={{ border: "1px solid #d9d9d9", borderRadius: 2 }}
-            bodyStyle={{ padding: 0 }}
-          >
-            <div style={{ padding: "16px", borderBottom: "1px solid #f0f0f0" }}>
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <Title level={4} style={{ margin: 0 }}>
-                    Students in grade : {state.currentGrade}
-                  </Title>
-                </Col>
-                <Col>
-                  <Text>
-                    Student Total : {state.totalStudentsInCurrentGrade}
+        {/* Grade Selection */}
+        <Row gutter={16} align="middle" style={{ marginBottom: 40 }}>
+          <Col style={{ display: "flex", alignItems: "center" }}>
+            <Text style={{ marginRight: 8 }}>Please select current grade</Text>
+          </Col>
+          <Col>
+            <Select
+              value={currentGrade}
+              onChange={(value) => setCurrentGrade(value as GradeOption)}
+              options={gradeOptions}
+              style={{ minWidth: 120 }}
+              disabled={loading}
+            />
+          </Col>
+          <Col>
+            <Button
+              type="primary"
+              onClick={() => fetchStudents(currentGrade)}
+              disabled={loading}
+            >
+              Apply Grade
+            </Button>
+          </Col>
+        </Row>
+
+        {/* Main Content: Two Cards */}
+        <Row gutter={24}>
+          {/* Card Kiri: Students in grade : X */}
+          <Col span={12}>
+            <Card
+              title={
+                <Space size="large">
+                  <Text strong>
+                    Students in grade :{" "}
+                    {currentGrade.toUpperCase().replace("_", " ")}
                   </Text>
-                </Col>
-              </Row>
+                  <Text type="secondary">
+                    Student Total : {allStudents.length}
+                  </Text>
+                </Space>
+              }
+              bordered={false}
+            >
+              {/* Search Bar */}
               <Input
                 placeholder="Search by NIS or Name"
-                prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
-                value={currentSearchTerm}
-                onChange={(e) => setCurrentSearchTerm(e.target.value)}
-                style={{ marginTop: 16 }}
+                prefix={<SearchOutlined />}
+                style={{ marginBottom: 16 }}
+                value={searchStudent}
+                onChange={(e) => setSearchStudent(e.target.value)}
               />
-            </div>
 
-            <Table<Student>
-              columns={studentsColumns}
-              dataSource={filteredStudents}
-              rowKey="nis"
-              pagination={false}
-              size="middle" // Agar padding table sesuai gambar
-              scroll={{ y: 300 }}
-              style={{ border: "none" }}
-            />
+              {/* Students Table */}
+              <Table
+                rowSelection={rowSelection}
+                columns={studentColumns}
+                dataSource={filteredStudents}
+                pagination={false}
+                size="small"
+                scroll={{ y: 300 }}
+                style={{ border: "1px solid #f0f0f0" }}
+                loading={loading}
+              />
 
-            <div
-              style={{
-                padding: 16,
-                textAlign: "center",
-                borderTop: "1px solid #f0f0f0",
-              }}
+              {/* Add to New Grade Button */}
+              <div style={{ marginTop: 16, textAlign: "center" }}>
+                <Button
+                  type="primary"
+                  style={{
+                    backgroundColor: "#52c41a",
+                    borderColor: "#52c41a",
+                    fontWeight: "bold",
+                  }}
+                  onClick={handleAddToNewGrade}
+                  disabled={selectedStudentKeys.length === 0 || loading}
+                >
+                  Add to New Grade
+                </Button>
+              </div>
+            </Card>
+          </Col>
+
+          {/* Card Kanan: New Grade */}
+          <Col span={12}>
+            <Card
+              title={
+                <Space size="large">
+                  <Text strong>New Grade</Text>
+                  <Select
+                    value={newGrade}
+                    onChange={(value) => setNewGrade(value as PostGradeOption)}
+                    options={newGradeOptions}
+                    style={{ minWidth: 100 }}
+                    disabled={loading}
+                  />
+                  <Text type="secondary">
+                    Student Total : {promotedStudents.length}
+                  </Text>
+                </Space>
+              }
+              bordered={false}
             >
-              <Button
-                type="primary"
-                onClick={handleAddToNewGrade}
-                style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
-              >
-                Add to New Grade
-              </Button>
-            </div>
-          </Card>
-        </Col>
-
-        {/* --- Kolom Kanan: New Grade --- */}
-        <Col span={12}>
-          <Card
-            style={{ border: "1px solid #d9d9d9", borderRadius: 2 }}
-            bodyStyle={{ padding: 0 }}
-          >
-            <div style={{ padding: "16px", borderBottom: "1px solid #f0f0f0" }}>
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <Space>
-                    <Title level={4} style={{ margin: 0 }}>
-                      New Grade
-                    </Title>
-                    <Select
-                      value={state.newGrade}
-                      onChange={(value) =>
-                        setState((prev) => ({
-                          ...prev,
-                          newGrade: Number(value),
-                        }))
-                      }
-                      options={gradeOptions.filter(
-                        (opt) => opt.value !== state.currentGrade
-                      )}
-                      style={{ width: 80 }}
-                    />
-                  </Space>
-                </Col>
-                <Col>
-                  <Text>Student Total : {state.promotedStudents.length}</Text>
-                </Col>
-              </Row>
-              {/* === INPUT PENCARIAN BARU UNTUK TABEL KANAN === */}
+              {/* Search Bar */}
               <Input
                 placeholder="Search by NIS or Name"
-                prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
-                value={promotedSearchTerm}
-                onChange={(e) => setPromotedSearchTerm(e.target.value)}
-                style={{ marginTop: 16 }}
+                prefix={<SearchOutlined />}
+                style={{ marginBottom: 16 }}
+                value={searchPromoted}
+                onChange={(e) => setSearchPromoted(e.target.value)}
               />
-              {/* ============================================== */}
-            </div>
 
-            <Table<PromotedStudent>
-              columns={promotedColumns}
-              // Gunakan filteredPromotedStudents yang baru
-              dataSource={filteredPromotedStudents}
-              rowKey="nis"
-              pagination={false}
-              size="middle"
-              scroll={{ y: 300 }}
-              style={{ border: "none" }}
-            />
-            <div
-              style={{
-                padding: 16,
-                textAlign: "center",
-                borderTop: "1px solid #f0f0f0",
-              }}
-            >
-              {/* Tempat kosong untuk konsistensi tata letak, atau bisa ditambahkan tombol lain jika diperlukan */}
-            </div>
-          </Card>
-        </Col>
-      </Row>
+              {/* Promoted Students Table */}
+              <Table
+                columns={promotedColumns}
+                dataSource={filteredPromotedStudents}
+                pagination={false}
+                size="small"
+                scroll={{ y: 300 }}
+                style={{ border: "1px solid #f0f0f0" }}
+                loading={loading}
+              />
+            </Card>
+          </Col>
+        </Row>
 
-      {/* --- Footer Submit --- */}
-      <Row justify="center" style={{ marginTop: 30 }}>
-        <Col span={24}>
+        {/* Submit Promotion Section */}
+        <div style={{ marginTop: 40, textAlign: "center" }}>
           <div
             style={{
+              display: "inline-block",
+              padding: "24px 32px",
               backgroundColor: "#fffbe6",
               border: "1px solid #ffe58f",
-              padding: 16,
-              borderRadius: 2,
-              textAlign: "center",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+              borderRadius: 4,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.07)",
             }}
           >
-            <Text type="warning" strong style={{ color: "#faad14" }}>
-              Please kindly check before submit the **Promotion & Graduation** !
+            <Text strong type="warning">
+              Please kindly check before submit the Promotion & Graduation !
             </Text>
-            <div style={{ marginTop: 16 }}>
-              <Button
-                type="primary"
-                size="large"
-                onClick={handleSubmitPromotion}
-                style={{
-                  backgroundColor: "#1890ff",
-                  borderColor: "#1890ff",
-                  height: "40px",
-                }}
-              >
-                Submit Promotion
-              </Button>
-            </div>
           </div>
-        </Col>
-      </Row>
-
-      <style jsx global>{`
-        /* Mengganti warna header table Ant Design agar lebih mirip gambar */
-        .ant-table-thead > tr > th {
-          background-color: #f7f7f7 !important;
-        }
-        /* Menghapus border luar table */
-        .ant-table-container {
-          border: none !important;
-        }
-      `}</style>
-    </Layout>
+          <div style={{ marginTop: 16 }}>
+            <Button
+              type="primary"
+              size="large"
+              style={{
+                height: 50,
+                padding: "0 50px",
+                fontWeight: "bold",
+                fontSize: "16px",
+              }}
+              onClick={handleSubmitPromotion}
+              disabled={
+                promotedStudents.length === 0 || loading || !activeAcademicYear
+              }
+            >
+              Submit Promotion
+            </Button>
+          </div>
+        </div>
+      </Spin>
+    </div>
   );
 };
 

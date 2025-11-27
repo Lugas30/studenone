@@ -6,9 +6,9 @@ import {
   AppstoreOutlined,
   SolutionOutlined,
   FolderOpenOutlined,
-  UserOutlined, // Ikon untuk Personnel
-  FileTextOutlined, // Ikon untuk Assignment/Enrollment, Assessment/Report
-  // Tambahkan ikon lain jika diperlukan, namun untuk keseragaman, saya gunakan FileTextOutlined
+  UserOutlined,
+  FileTextOutlined,
+  // Tambahkan ikon lain jika diperlukan
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -17,304 +17,227 @@ import React from "react";
 // Definisikan tipe untuk Item Menu Ant Design
 type MenuItem = Required<MenuProps>["items"][number];
 
+// --- FUNGSI UTILITY MENU ---
+
+// Fungsi utilitas untuk membuat item menu
+function getItem(
+  label: React.ReactNode,
+  key: React.Key,
+  icon?: React.ReactNode,
+  children?: MenuItem[],
+  type?: "group"
+): MenuItem {
+  return {
+    key,
+    icon,
+    children,
+    label,
+    type,
+  } as MenuItem;
+}
+
 // Struktur menu dengan 'group' untuk pemisah/judul section
 const items: MenuItem[] = [
   // --- 1. SEPARATOR/GROUP UNTUK DASHBOARD ---
-  {
-    key: "group-dashboard", // Key unik untuk group
-    type: "group", // Menggunakan 'group' untuk judul section
-    label: "Dashboard", // Teks yang akan ditampilkan sebagai pemisah
-  },
-  {
-    key: "/dashboard",
-    icon: <AppstoreOutlined />,
-    label: <Link href="/dashboard">Dashboard</Link>,
-  },
-  {
-    key: "/role-info",
-    icon: <SolutionOutlined />,
-    label: <Link href="/role-info">Role Info</Link>,
-  },
+  getItem("Dashboard", "group-dashboard", null, undefined, "group"),
+  getItem(
+    <Link href="/dashboard">Dashboard</Link>,
+    "/dashboard",
+    <AppstoreOutlined />
+  ),
+  getItem(
+    <Link href="/role-info">Role Info</Link>,
+    "/role-info",
+    <SolutionOutlined />
+  ),
 
   // --- 2. SEPARATOR/GROUP UNTUK MASTER DATA ---
-  {
-    key: "group-master-data", // Key unik untuk group
-    type: "group", // Menggunakan 'group' untuk judul section
-    label: "Master Data", // Teks yang akan ditampilkan sebagai pemisah
-  },
+  getItem("Master Data", "group-master-data", null, undefined, "group"),
   // Submenu "Academic & Curriculum"
-  {
-    key: "master-data-academic-curriculum",
-    icon: <FolderOpenOutlined />,
-    label: "Academic & Curriculum",
-    type: "submenu",
-    children: [
-      {
-        // URL diubah dari /master-data/academic-year menjadi /academic-year
-        key: "/academic-year",
-        label: <Link href="/academic-year">Academic Year</Link>,
-      },
-      {
-        // URL diubah dari /master-data/grade-classroom menjadi /grade-classroom
-        key: "/grade-classroom",
-        label: <Link href="/grade-classroom">Grade & Classroom</Link>,
-      },
-      {
-        // URL diubah dari /master-data/subject menjadi /subject
-        key: "/subject",
-        label: <Link href="/subject">Subject</Link>,
-      },
-      {
-        // URL diubah dari /master-data/predicate-kktp menjadi /predicate-kktp
-        key: "/predicate-kktp",
-        label: <Link href="/predicate-kktp">Predicate KKTP</Link>,
-      },
-      {
-        // URL diubah dari /master-data/extracurricular menjadi /extracurricular
-        key: "/extracurricular",
-        label: <Link href="/extracurricular">Extracurricular</Link>,
-      },
-    ],
-  },
+  getItem(
+    "Academic & Curriculum",
+    "master-data-academic-curriculum",
+    <FolderOpenOutlined />,
+    [
+      getItem(
+        <Link href="/academic-year">Academic Year</Link>,
+        "/academic-year"
+      ),
+      getItem(
+        <Link href="/grade-classroom">Grade & Classroom</Link>,
+        "/grade-classroom"
+      ),
+      getItem(<Link href="/subject">Subject</Link>, "/subject"),
+      getItem(
+        <Link href="/predicate-kktp">Predicate KKTP</Link>,
+        "/predicate-kktp"
+      ),
+      getItem(
+        <Link href="/extracurricular">Extracurricular</Link>,
+        "/extracurricular"
+      ),
+    ]
+  ),
   // Submenu "Personnel"
-  {
-    key: "master-data-personnel",
-    icon: <UserOutlined />,
-    label: "Personnel",
-    type: "submenu",
-    children: [
-      {
-        // URL diubah dari /master-data/personnel/principal menjadi /personnel/principal
-        key: "/head-of-unit",
-        label: <Link href="/head-of-unit">Head of Unit</Link>,
-      },
-      {
-        // URL diubah dari /master-data/personnel/teachers menjadi /personnel/teachers
-        key: "/teachers",
-        label: <Link href="/teachers">Teachers</Link>,
-      },
-      {
-        // URL diubah dari /master-data/personnel/students menjadi /personnel/students
-        key: "/students",
-        label: <Link href="/students">Students</Link>,
-      },
-    ],
-  },
+  getItem("Personnel", "master-data-personnel", <UserOutlined />, [
+    getItem(<Link href="/head-of-unit">Head of Unit</Link>, "/head-of-unit"),
+    getItem(<Link href="/teachers">Teachers</Link>, "/teachers"),
+    getItem(<Link href="/students">Students</Link>, "/students"),
+  ]),
 
   // --- 3. SEPARATOR/GROUP UNTUK ENROLLMENT ---
-  {
-    key: "group-enrollment",
-    type: "group",
-    label: "Enrollment",
-  },
+  getItem("Enrollment", "group-enrollment", null, undefined, "group"),
   // Submenu "Assignment"
-  {
-    key: "enrollment-assignment",
-    icon: <FileTextOutlined />,
-    label: "Assignment",
-    type: "submenu",
-    children: [
-      {
-        // URL diubah dari /enrollment/role-assignment menjadi /role-assignment
-        key: "/role-assignment",
-        label: <Link href="/role-assignment">Role Assignment</Link>,
-      },
-      {
-        // URL diubah dari /enrollment/subject-teacher menjadi /subject-teacher
-        key: "/subject-teacher",
-        label: <Link href="/subject-teacher">Subject Teacher</Link>,
-      },
-      {
-        // URL diubah dari /enrollment/homeroom-teacher menjadi /homeroom-teacher
-        key: "/homeroom-teacher",
-        label: <Link href="/homeroom-teacher">Homeroom Teacher</Link>,
-      },
-      {
-        // URL diubah dari /enrollment/promotion-graduation menjadi /promotion-graduation
-        key: "/promotion-graduation",
-        label: <Link href="/promotion-graduation">Promotion & Graduation</Link>,
-      },
-      {
-        // URL diubah dari /enrollment/student-placement menjadi /student-placement
-        key: "/student-placement",
-        label: <Link href="/student-placement">Student Placement</Link>,
-      },
-    ],
-  },
+  getItem("Assignment", "enrollment-assignment", <FileTextOutlined />, [
+    getItem(
+      <Link href="/role-assignment">Role Assignment</Link>,
+      "/role-assignment"
+    ),
+    getItem(
+      <Link href="/subject-teacher">Subject Teacher</Link>,
+      "/subject-teacher"
+    ),
+    getItem(
+      <Link href="/homeroom-teacher">Homeroom Teacher</Link>,
+      "/homeroom-teacher"
+    ),
+    getItem(
+      <Link href="/promotion-graduation">Promotion & Graduation</Link>,
+      "/promotion-graduation"
+    ),
+    getItem(
+      <Link href="/student-placement">Student Placement</Link>,
+      "/student-placement"
+    ),
+  ]),
 
-  // === START: PENAMBAHAN MENU DARI GAMBAR ===
-
-  // --- 4. SEPARATOR/GROUP UNTUK ASSESSMENT & REPORT ---
-  {
-    key: "group-attendance-health-indicator",
-    type: "group",
-    label: "Attendance, Health & Indicator",
-  },
-
+  // --- 4. SEPARATOR/GROUP UNTUK ATTENDANCE, HEALTH & INDICATOR ---
+  getItem(
+    "Attendance, Health & Indicator",
+    "group-attendance-health-indicator",
+    null,
+    undefined,
+    "group"
+  ),
   // Submenu "Daily & Monthly Report"
-  {
-    key: "report-daily-monthly",
-    icon: <FileTextOutlined />,
-    label: "Daily & Monthly Report",
-    type: "submenu",
-    children: [
-      {
-        key: "/student-attendance",
-        label: <Link href="/student-attendance">Student Attendance</Link>,
-      },
-      {
-        key: "/student-attendance-qurans",
-        label: (
-          <Link href="/student-attendance-qurans">
-            Student Attendance Qurans
-          </Link>
-        ),
-      },
-      {
-        key: "/student-health-condition",
-        label: (
-          <Link href="/student-health-condition">Student Health Condition</Link>
-        ),
-      },
-    ],
-  },
+  getItem(
+    "Daily & Monthly Report",
+    "report-daily-monthly",
+    <FileTextOutlined />,
+    [
+      getItem(
+        <Link href="/student-attendance">Student Attendance</Link>,
+        "/student-attendance"
+      ),
+      getItem(
+        <Link href="/student-attendance-qurans">
+          Student Attendance Qurans
+        </Link>,
+        "/student-attendance-qurans"
+      ),
+      getItem(
+        <Link href="/student-health-condition">Student Health Condition</Link>,
+        "/student-health-condition"
+      ),
+    ]
+  ),
 
   // Submenu "Indicator Input"
-  {
-    key: "input-indicator",
-    icon: <FileTextOutlined />,
-    label: "Indicator Input",
-    type: "submenu",
-    children: [
-      {
-        key: "/indicator-spi-sos",
-        label: <Link href="/indicator-spi-sos">Indicator Spi & Sos</Link>,
-      },
-      {
-        key: "/indicator-knowledge-skill",
-        label: (
-          <Link href="/indicator-knowledge-skill">
-            Indicator Knowledge & Skill
-          </Link>
-        ),
-      },
-      {
-        key: "/indicator-doa-hadits",
-        label: <Link href="/indicator-doa-hadits">Indicator Doa & Hadits</Link>,
-      },
-      {
-        key: "/indicator-life-skill",
-        label: <Link href="/indicator-life-skill">Indicator Life Skill</Link>,
-      },
-      {
-        key: "/indicator-pid",
-        label: <Link href="/indicator-pid">Indicator PID</Link>,
-      },
-    ],
-  },
+  getItem("Indicator Input", "input-indicator", <FileTextOutlined />, [
+    getItem(
+      <Link href="/indicator-spi-sos">Indicator Spi & Sos</Link>,
+      "/indicator-spi-sos"
+    ),
+    getItem(
+      <Link href="/indicator-knowledge-skill">
+        Indicator Knowledge & Skill
+      </Link>,
+      "/indicator-knowledge-skill"
+    ),
+    getItem(
+      <Link href="/indicator-doa-hadits">Indicator Doa & Hadits</Link>,
+      "/indicator-doa-hadits"
+    ),
+    getItem(
+      <Link href="/indicator-life-skill">Indicator Life Skill</Link>,
+      "/indicator-life-skill"
+    ),
+    getItem(<Link href="/indicator-pid">Indicator PID</Link>, "/indicator-pid"),
+  ]),
 
-  // Submenu "Assessment Report Input"
-  {
-    key: "input-assessment-report",
-    icon: <FileTextOutlined />,
-    label: "Assessment Report Input",
-    type: "submenu",
-    children: [
-      // Submenu: Academic Report (Dropdown)
-      {
-        key: "assessment/academic-report", // Key unik untuk submenu yang dapat dibuka
-        label: "Academic Report", // Label submenu
-        type: "submenu", // Tipe submenu agar dapat di-dropdown
-        children: [
-          {
-            key: "/assessment/academic-report/spi-sos",
-            label: (
-              <Link href="/assessment/academic-report/spi-sos">Spi & Sos</Link>
-            ),
-          },
-          {
-            key: "/assessment/academic-report/knowledge",
-            label: (
-              <Link href="/assessment/academic-report/knowledge">
-                Knowledge
-              </Link>
-            ),
-          },
-          {
-            key: "/assessment/academic-report/skills",
-            label: (
-              <Link href="/assessment/academic-report/skills">Skills</Link>
-            ),
-          },
-          {
-            key: "/assessment/academic-report/doa-hadits",
-            label: (
-              <Link href="/assessment/academic-report/doa-hadits">
-                Doa & Hadits
-              </Link>
-            ),
-          },
-          {
-            key: "/assessment/academic-report/life-skill",
-            label: (
-              <Link href="/assessment/academic-report/life-skill">
-                Life Skill
-              </Link>
-            ),
-          },
-          {
-            key: "/assessment/academic-report/body-size-health-absences",
-            label: (
-              <Link href="/assessment/academic-report/body-size-health-absences">
-                Body Size, Health, Absences
-              </Link>
-            ),
-          },
-          {
-            key: "/assessment/academic-report/homeroom-notes",
-            label: (
-              <Link href="/assessment/academic-report/homeroom-notes">
-                Homeroom Notes
-              </Link>
-            ),
-          },
-        ],
-      },
-      // Item lainnya
-      {
-        key: "/assessment/parents-report",
-        label: <Link href="/assessment/parents-report">Parents Report</Link>,
-      },
-      // Submenu: Qurans Report (Dropdown)
-      {
-        key: "assessment/qurans-report", // Key unik untuk submenu yang dapat dibuka
-        label: "Qurans Report", // Label submenu
-        type: "submenu", // Tipe submenu agar dapat di-dropdown
-        children: [
-          {
-            key: "/assessment/qurans-report/tahsin",
-            label: <Link href="/assessment/qurans-report/tahsin">Tahsin</Link>,
-          },
-          {
-            key: "/assessment/qurans-report/hapalan",
-            label: (
-              <Link href="/assessment/qurans-report/hapalan">Hapalan</Link>
-            ),
-          },
-        ],
-      },
-      // Item lainnya
-      {
-        key: "/assessment/excul-report",
-        label: <Link href="/assessment/excul-report">Excul Report</Link>,
-      },
-      {
-        key: "/assessment/pid-report",
-        label: <Link href="/assessment/pid-report">PID Report</Link>,
-      },
-    ],
-  },
-  // === END: PENAMBAHAN MENU DARI GAMBAR ===
+  // --- 5. SEPARATOR/GROUP UNTUK ASSESSMENT & REPORT INPUT ---
+  getItem(
+    "Assessment Report Input",
+    "group-assessment-report",
+    null,
+    undefined,
+    "group"
+  ),
+
+  // Submenu utama: Academic Report
+  getItem("Academic Report", "academic-report", <FileTextOutlined />, [
+    getItem(
+      <Link href="/academic-report/spi-sos">Spi & Sos</Link>,
+      "/academic-report/spi-sos"
+    ),
+    getItem(
+      <Link href="/academic-report/knowledge">Knowledge</Link>,
+      "/academic-report/knowledge"
+    ),
+    getItem(
+      <Link href="/academic-report/skills">Skills</Link>,
+      "/academic-report/skills"
+    ),
+    getItem(
+      <Link href="/academic-report/doa-hadits">Doa & Hadits</Link>,
+      "/academic-report/doa-hadits"
+    ),
+    getItem(
+      <Link href="/academic-report/life-skill">Life Skill</Link>,
+      "/academic-report/life-skill"
+    ),
+    getItem(
+      <Link href="/academic-report/body-size-health-absences">
+        Body Size, Health, Absences
+      </Link>,
+      "/academic-report/body-size-health-absences"
+    ),
+    getItem(
+      <Link href="/academic-report/homeroom-notes">Homeroom Notes</Link>,
+      "/academic-report/homeroom-notes"
+    ),
+  ]),
+
+  // Item Laporan Lainnya (Sejajar dengan Academic Report)
+  getItem(
+    <Link href="/assessment/parents-report">Parents Report</Link>,
+    "/assessment/parents-report",
+    <FileTextOutlined />
+  ),
+
+  // Submenu: Qurans Report
+  getItem("Qurans Report", "assessment-qurans-report", <FileTextOutlined />, [
+    getItem(
+      <Link href="/assessment/qurans-report/tahsin">Tahsin</Link>,
+      "/assessment/qurans-report/tahsin"
+    ),
+    getItem(
+      <Link href="/assessment/qurans-report/hapalan">Hapalan</Link>,
+      "/assessment/qurans-report/hapalan"
+    ),
+  ]),
+
+  // Item Laporan Lainnya (Sejajar dengan Academic Report)
+  getItem(
+    <Link href="/assessment/excul-report">Excul Report</Link>,
+    "/assessment/excul-report",
+    <FileTextOutlined />
+  ),
+  getItem(
+    <Link href="/assessment/pid-report">PID Report</Link>,
+    "/assessment/pid-report",
+    <FileTextOutlined />
+  ),
 ];
 
 const SiderMenu: React.FC = () => {
@@ -339,7 +262,7 @@ const SiderMenu: React.FC = () => {
           (child) => child && "key" in child && child.key === currentPath
         );
 
-        // Jika child aktif, atau jika child itu sendiri adalah submenu yang salah satu cucunya aktif
+        // Cek apakah child adalah submenu, dan salah satu cucunya aktif
         const isGrandChildActive = item.children.some(
           (child) =>
             child &&
@@ -398,6 +321,7 @@ const SiderMenu: React.FC = () => {
   // Gabungkan openKeys dari parent dan nested submenu
   const parentOpenKeys = getOpenKeys(items, pathname);
   const nestedOpenKeys = getNestedOpenKeys(items, pathname);
+  // Tambahkan semua key submenu bersarang yang aktif ke daftar openKeys utama
   const openKeys = [...new Set([...parentOpenKeys, ...nestedOpenKeys])];
 
   return (
@@ -405,8 +329,8 @@ const SiderMenu: React.FC = () => {
       theme="light"
       mode="inline"
       selectedKeys={selectedKeys}
+      // Gunakan state untuk openKeys jika ingin mengontrol perilaku expand/collapse sepenuhnya (opsional)
       defaultOpenKeys={openKeys}
-      // items harus memiliki tipe ItemType<MenuItemType>[] yang sesuai
       items={items}
       style={{ borderRight: 0 }}
     />

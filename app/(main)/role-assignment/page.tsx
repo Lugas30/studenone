@@ -1,144 +1,157 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  Table,
-  Input,
-  Button,
-  Space,
-  Row,
-  Col,
-  Layout,
-  Breadcrumb,
-  Spin,
-  Pagination,
-  Tag,
-  Modal,
-  Select, // Diperlukan untuk "Row per page"
-} from "antd";
-import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import { toast } from "react-toastify";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import {
+  Table,
+  Button,
+  Input,
+  Space,
+  Typography,
+  Breadcrumb,
+  Row,
+  Col,
+  Pagination,
+  Select,
+  Alert,
+  Spin,
+} from "antd";
+import {
   SearchOutlined,
+  PlusOutlined,
   UploadOutlined,
-  UserAddOutlined,
   EyeOutlined,
   EditOutlined,
   DeleteOutlined,
-  DownloadOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
+import type { ColumnsType } from "antd/es/table";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
-// --- Impor Komponen Modal ---
-// Pastikan path ini benar di proyek Anda
-import AddTeacherRoleModal from "../../components/AddTeacherRoleModal";
-import EditTeacherRoleModal from "../../components/EditTeacherRoleModal";
-import ViewTeacherRoleModal from "../../components/ViewTeacherRoleModal";
+// Import Modal yang telah di-update untuk menggunakan API
+import AddEditRoleModal from "../../components/AddEditRoleModal"; // Pastikan path file benar
 
-const { Content } = Layout;
+const { Title, Text } = Typography;
 const { Option } = Select;
 
-// Ambil BASE URL dari .env
-// Dalam lingkungan nyata, pastikan variabel ini dimuat dengan benar.
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+// Ambil base URL dari .env
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_ENDPOINT = `${BASE_URL}/role-teachers`;
 
-// --- 1. Definisi Tipe Data (Disesuaikan dengan data API) ---
+// =======================================================
+// 1. DEFINISI TIPE API
+// =======================================================
 
-interface RoleAssignmentTableData {
-  id: number;
-  nip: string;
-  teacherName: string;
-  gender: string;
-  roles: string[];
-  homebaseClass: string;
-  key: string;
+interface Role {
+  id: number; // Tambahkan ID Role untuk kebutuhan Edit
+  role: string;
 }
 
-// --- 2. Komponen RoleAssignmentPage ---
+interface RoleAssignment {
+  role: Role;
+}
 
-export default function RoleAssignmentPage() {
-  const [data, setData] = useState<RoleAssignmentTableData[]>([]);
-  const [academicYear, setAcademicYear] = useState("");
-  const [loading, setLoading] = useState(false);
+interface Teacher {
+  id: number; // Tambahkan ID Teacher untuk kebutuhan Edit
+  nip: string;
+  name: string;
+  gender: "male" | "female";
+}
 
-  // State Modal & Record ID
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
+interface RoleTeacherItem {
+  id: number; // ID RoleTeacher untuk Edit/Delete
+  teacher: Teacher;
+  role_teacher_assignments: RoleAssignment[];
+  class_id: number | null; // Tambahkan class_id untuk kebutuhan Edit Homebase
+}
 
-  // State untuk Pencarian dan Pagination
-  const [searchText, setSearchText] = useState("");
+interface RoleTeacherResponse {
+  academicYear: string;
+  data: RoleTeacherItem[];
+}
+
+// Tipe Data untuk Table (Flat Data)
+interface TeacherRoleData {
+  key: number;
+  id: number; // ID RoleTeacher
+  teacherId: number; // ID Guru
+  NIP: string;
+  teacherName: string;
+  gender: "L" | "P";
+  role: string; // Gabungan dari semua peran (string)
+  roleIds: number[]; // ID Role dalam bentuk array (untuk modal edit)
+  classId: number | undefined; // ID Homebase (untuk modal edit)
+}
+
+// =======================================================
+// 2. KOMPONEN HALAMAN UTAMA
+// =======================================================
+
+const RoleAssignmentPage: React.FC = () => {
+  const [data, setData] = useState<TeacherRoleData[]>([]);
+  const [academicYear, setAcademicYear] = useState("Loading...");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // State untuk Modal Add/Edit
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState<"add" | "edit">("add");
+  const [editData, setEditData] = useState<any>(null);
+
+  // State untuk Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const pageSize = 10;
+  const totalRecords = 500; // Total record disimulasikan
+  const [goToPageInput, setGoToPageInput] = useState("1");
 
-  // Logika Filter Data
-  const filteredData = useMemo(() => {
-    return data.filter(
-      (item) =>
-        item.teacherName.toLowerCase().includes(searchText.toLowerCase()) ||
-        item.nip.toLowerCase().includes(searchText.toLowerCase()) ||
-        item.roles.some((role) =>
-          role.toLowerCase().includes(searchText.toLowerCase())
-        )
-    );
-  }, [data, searchText]);
-
-  const totalItems = filteredData.length;
-  const totalPages = Math.ceil(totalItems / pageSize);
-
-  // Logika Pagination Data
-  const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredData.slice(start, end);
-  }, [filteredData, currentPage, pageSize]);
-
-  // --- 3. Fungsi Fetch Data dari API (Perbaikan Homebase di sini) ---
+  // --- Data Fetching (useCallback) ---
   const fetchData = useCallback(async () => {
-    if (!API_BASE_URL) return toast.error("API URL tidak terdefinisi.");
-
+    if (!BASE_URL) {
+      setError("Error: NEXT_PUBLIC_API_URL is not defined in .env");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      // Ganti dengan endpoint API Anda yang sebenarnya
-      const response = await axios.get(`${API_BASE_URL}/role-teachers`);
-      const apiData = response.data.data;
+      // Catatan: API Anda sepertinya tidak mendukung pagination,
+      // jadi ini hanya mengambil semua data. Untuk pagination real,
+      // Anda perlu menambahkan parameter page dan limit ke API_ENDPOINT.
+      const response = await axios.get<RoleTeacherResponse>(API_ENDPOINT);
+      const apiData = response.data;
 
-      setAcademicYear(response.data.academicYear || "Tahun Akademik N/A");
+      setAcademicYear(apiData.academicYear);
 
-      const mappedData: RoleAssignmentTableData[] = apiData.map((item: any) => {
-        // Ambil semua role
-        const roles = item.role_teacher_assignments.map(
-          (a: any) => a.role.role
+      // Mapping dan Transformasi Data API ke format Table
+      const mappedData: TeacherRoleData[] = apiData.data.map((item, index) => {
+        const roleAssignments = item.role_teacher_assignments;
+
+        const rolesString = roleAssignments
+          .map((assignment) => assignment.role.role)
+          .join(", ");
+
+        const roleIdsArray = roleAssignments.map(
+          (assignment) => assignment.role.id
         );
 
-        // *** PERBAIKAN LOGIKA HOMEBASE ***
-        // Homebase diambil dari properti 'homeroom' di level item (data utama),
-        // karena data API menunjukkan relasi kelas ada di situ (homeroom.classroom).
-        const homeroomData = item.homeroom;
-
-        const homebaseClass =
-          homeroomData && homeroomData.classroom
-            ? `${homeroomData.classroom.code} - ${homeroomData.classroom.class_name}`
-            : "-";
-        // *** AKHIR PERBAIKAN ***
-
         return {
+          key: item.id || index,
           id: item.id,
-          nip: item.teacher.nip || item.teacher.nuptk || "-",
-          teacherName: item.teacher.name,
-          // Menggunakan L/P
+          teacherId: item.teacher.id,
+          NIP: item.teacher.nip || "-",
+          teacherName: item.teacher.name || "Nama Tidak Ditemukan",
           gender: item.teacher.gender === "male" ? "L" : "P",
-          roles: roles,
-          homebaseClass: homebaseClass,
-          key: item.id.toString(),
+          role: rolesString || "No Role Assigned",
+          roleIds: roleIdsArray,
+          classId: item.class_id || undefined,
         };
       });
 
       setData(mappedData);
-    } catch (error) {
-      console.error("Error fetching role assignments:", error);
-      toast.error("Gagal memuat data Role Assignment.");
+      setError(null);
+    } catch (err) {
+      console.error("Error fetching data:", err);
+      setError("Failed to fetch teacher roles from API.");
     } finally {
       setLoading(false);
     }
@@ -148,69 +161,65 @@ export default function RoleAssignmentPage() {
     fetchData();
   }, [fetchData]);
 
-  // --- 4. Handlers untuk Aksi dan Pagination ---
-
-  const handlePageChange = (page: number, size: number) => {
-    setCurrentPage(page);
-    if (size !== pageSize) {
-      setPageSize(size);
-    }
+  // --- Handler Modal ---
+  const handleOpenAdd = () => {
+    setModalMode("add");
+    setEditData(null);
+    setIsModalVisible(true);
   };
 
-  const handleGoToPage = (val: number) => {
-    if (val >= 1 && val <= totalPages) {
-      setCurrentPage(val);
-    }
-  };
-
-  const handleView = (id: number) => {
-    setSelectedRecordId(id);
-    setIsViewModalOpen(true);
-  };
-
-  const handleEdit = (id: number) => {
-    setSelectedRecordId(id);
-    setIsEditModalOpen(true);
-  };
-
-  const handleDelete = (record: RoleAssignmentTableData) => {
-    Modal.confirm({
-      title: "Hapus Role Assignment",
-      content: `Apakah Anda yakin ingin menghapus peran untuk guru ${record.teacherName} (NIP: ${record.nip})?`,
-      okText: "Hapus",
-      okType: "danger",
-      cancelText: "Batal",
-      onOk: async () => {
-        if (!API_BASE_URL) return toast.error("API URL tidak terdefinisi.");
-        try {
-          // Ganti dengan endpoint API Anda yang sebenarnya
-          await axios.delete(`${API_BASE_URL}/role-teachers/${record.id}`);
-          toast.success("Peran guru berhasil dihapus!");
-          fetchData();
-        } catch (error: any) {
-          console.error("Error deleting record:", error);
-          toast.error(
-            error.response?.data?.message || "Gagal menghapus peran guru."
-          );
-        }
-      },
+  const handleOpenEdit = (record: TeacherRoleData) => {
+    setModalMode("edit");
+    setEditData({
+      id: record.id,
+      teacherId: record.teacherId,
+      roleIds: record.roleIds,
+      classId: record.classId,
     });
+    setIsModalVisible(true);
   };
 
-  // Sembunyikan pagination bawaan Table Ant Design
-  const customPaginationConfig: TablePaginationConfig = {
-    style: { display: "none" },
+  const handleModalClose = () => {
+    setIsModalVisible(false);
+    setEditData(null);
   };
 
-  // --- 5. Definisi Kolom Tabel ---
+  // Dipanggil setelah sukses Add/Edit di Modal
+  const handleSuccess = () => {
+    // Tampilkan toast success sudah dilakukan di modal
+    fetchData(); // Muat ulang data tabel
+  };
 
-  const columns: ColumnsType<RoleAssignmentTableData> = [
+  // --- Handler Delete ---
+  const handleDelete = async (id: number) => {
+    if (
+      window.confirm(
+        `Apakah Anda yakin ingin menghapus data role guru dengan ID: ${id}?`
+      )
+    ) {
+      try {
+        // API DELETE: {{base_url}}/role-teachers/{id}
+        await axios.delete(`${API_ENDPOINT}/${id}`);
+        toast.success("Data peran guru berhasil dihapus!");
+        fetchData();
+      } catch (error) {
+        let errorMessage = "Gagal menghapus data.";
+        if (axios.isAxiosError(error) && error.response) {
+          errorMessage = error.response.data.message || errorMessage;
+        }
+        toast.error(errorMessage);
+      }
+    }
+  };
+
+  // --- Kolom Tabel ---
+  const columns: ColumnsType<TeacherRoleData> = [
     {
-      title: "NIY/NIP",
-      dataIndex: "nip",
-      key: "nip",
+      title: "NIP",
+      dataIndex: "NIP",
+      key: "NIP",
+      sorter: (a, b) => a.NIP.localeCompare(b.NIP),
       width: 120,
-      sorter: (a, b) => a.nip.localeCompare(b.nip),
     },
     {
       title: "Teacher Name",
@@ -222,263 +231,243 @@ export default function RoleAssignmentPage() {
       title: "Gender",
       dataIndex: "gender",
       key: "gender",
-      width: 100,
       sorter: (a, b) => a.gender.localeCompare(b.gender),
+      width: 100,
     },
     {
       title: "Role",
-      dataIndex: "roles",
-      key: "roles",
-      render: (roles: string[]) => (
-        // Menggunakan Tag untuk visualisasi Role yang lebih baik
-        <Space size={[0, 8]} wrap>
-          {roles.map((role) => (
-            <Tag
-              key={role}
-              color={role.includes("Homeroom") ? "blue" : "geekblue"}
-            >
-              {role}
-            </Tag>
-          ))}
-        </Space>
-      ),
-    },
-    {
-      title: "Homebase",
-      dataIndex: "homebaseClass",
-      key: "homebaseClass",
-      width: 150,
-      sorter: (a, b) => a.homebaseClass.localeCompare(b.homebaseClass),
+      dataIndex: "role",
+      key: "role",
+      sorter: (a, b) => a.role.localeCompare(b.role),
     },
     {
       title: "Actions",
       key: "actions",
-      width: 120,
+      width: 150,
+      align: "right",
       render: (_, record) => (
         <Space size="middle">
-          {/* View */}
           <Button
             icon={<EyeOutlined />}
-            onClick={() => handleView(record.id)}
-            type="text"
-            title="View Detail"
-            style={{ color: "#1890ff", padding: "0 4px" }}
+            size="small"
+            title="View"
+            style={{ border: "none" }}
           />
-          {/* Edit */}
           <Button
             icon={<EditOutlined />}
-            onClick={() => handleEdit(record.id)}
-            type="text"
-            title="Edit Role"
-            style={{ color: "#faad14", padding: "0 4px" }}
+            size="small"
+            title="Edit"
+            onClick={() => handleOpenEdit(record)} // Trigger Edit Modal
+            style={{ color: "#1890ff", border: "none" }}
           />
-          {/* Delete */}
           <Button
             icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record)}
-            type="text"
-            title="Delete Role"
-            style={{ color: "#ff4d4f", padding: "0 4px" }}
+            size="small"
+            title="Delete"
+            onClick={() => handleDelete(record.id)} // Trigger Delete
+            style={{ color: "#ff4d4f", border: "none" }}
+          />
+          <Button
+            size="small"
+            icon={<DownOutlined />}
+            style={{
+              border: "none",
+              padding: "0 5px",
+              transform: "rotate(-90deg)",
+            }}
           />
         </Space>
       ),
     },
   ];
 
-  // --- 6. Render Komponen ---
+  // --- Fungsi Pagination Kustom (Sama seperti sebelumnya) ---
+  const handleGoToPage = () => {
+    const page = parseInt(goToPageInput);
+    const maxPage = Math.ceil(totalRecords / pageSize);
+    if (page >= 1 && page <= maxPage) {
+      setCurrentPage(page);
+    } else {
+      toast.error(`Halaman harus antara 1 dan ${maxPage}`);
+    }
+  };
 
-  return (
-    <Layout style={{ padding: "0 24px 24px", background: "#fff" }}>
-      {/* 6.1. Header Halaman */}
-      <div style={{ padding: "16px 0 24px 0" }}>
-        <Breadcrumb items={[{ title: "Home" }, { title: "Role Assignment" }]} />
-        <Row justify="space-between" align="middle" style={{ marginTop: 10 }}>
-          <Col>
-            <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 500 }}>
-              Role Assignment
-            </h1>
-          </Col>
-          <Col>
-            <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 500 }}>
-              {academicYear}
-            </h1>
-          </Col>
-        </Row>
+  // Hanya untuk simulasi tampilan seperti gambar
+  const customItemRender = (
+    current: number,
+    type: "page" | "prev" | "next" | "jump-prev" | "jump-next",
+    originalElement: React.ReactNode
+  ) => {
+    if (type === "page") {
+      const pagesToShow = [
+        1,
+        4,
+        5,
+        6,
+        7,
+        8,
+        Math.ceil(totalRecords / pageSize),
+      ];
+      if (pagesToShow.includes(current)) {
+        return (
+          <a
+            style={{ fontWeight: current === currentPage ? "bold" : "normal" }}
+          >
+            {current}
+          </a>
+        );
+      }
+      if (current === 2 || current === Math.ceil(totalRecords / pageSize) - 1) {
+        return "...";
+      }
+      return null;
+    }
+    return originalElement;
+  };
+
+  // --- Tampilan Loading dan Error ---
+  if (loading) {
+    return (
+      <div style={{ padding: "24px", textAlign: "center" }}>
+        <Spin size="large" tip="Loading Data..." />
       </div>
+    );
+  }
 
-      <Content>
-        <Spin spinning={loading} tip="Loading data...">
-          {/* 6.2. Search dan Action Buttons */}
-          <Row
-            gutter={16}
-            justify="space-between"
-            align="middle"
-            style={{ marginBottom: 16 }}
-          >
-            {/* Search Input */}
-            <Col flex="300px">
-              <Input
-                prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
-                placeholder="Search NIP or Name"
-                value={searchText}
-                onChange={(e) => {
-                  setSearchText(e.target.value);
-                  setCurrentPage(1); // Reset halaman saat mencari
-                }}
-                style={{ width: "100%" }}
-              />
-            </Col>
+  if (error) {
+    return (
+      <div style={{ padding: "24px" }}>
+        <Alert message="Error" description={error} type="error" showIcon />
+      </div>
+    );
+  }
 
-            {/* Action Buttons */}
-            <Col>
-              <Space>
-                <Button
-                  type="primary"
-                  style={{ backgroundColor: "#28a745", borderColor: "#28a745" }}
-                  icon={<UploadOutlined />}
-                  disabled={true} // Nonaktifkan, fungsi belum ada
-                >
-                  Mass Upload
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<UserAddOutlined />}
-                  onClick={() => setIsModalOpen(true)} // Aksi buka modal Add
-                >
-                  Add Teacher Role
-                </Button>
-                <Button icon={<DownloadOutlined />} disabled={true} />
-              </Space>
-            </Col>
-          </Row>
+  // --- Tampilan Utama ---
+  return (
+    <div style={{ padding: "24px", background: "#fff", minHeight: "100vh" }}>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
+        <Col>
+          <Breadcrumb style={{ marginBottom: 8, color: "#999" }}>
+            <Breadcrumb.Item>Home</Breadcrumb.Item>
+            <Breadcrumb.Item>Role</Breadcrumb.Item>
+          </Breadcrumb>
+          <Title level={2} style={{ margin: 0 }}>
+            Role Assignment
+          </Title>
+        </Col>
+        <Col>
+          <Title level={2} style={{ margin: 0, color: "#999" }}>
+            {academicYear}
+          </Title>
+        </Col>
+      </Row>
 
-          {/* 6.3. Tabel Data */}
-          <Table
-            columns={columns}
-            dataSource={paginatedData}
-            rowKey="id"
-            pagination={customPaginationConfig}
-            size="middle"
-            scroll={{ x: "max-content" }}
-            style={{ border: "1px solid #f0f0f0", borderBottom: "none" }}
+      <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
+        <Col>
+          <Input
+            placeholder="Search NIP or Name"
+            prefix={<SearchOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
+            style={{ width: 300, padding: 10, borderRadius: 4 }}
           />
+        </Col>
+        <Col>
+          <Space>
+            <Button
+              type="primary"
+              style={{
+                backgroundColor: "#28a745",
+                borderColor: "#28a745",
+                color: "#fff",
+              }}
+              icon={<UploadOutlined />}
+              size="large"
+            >
+              Mass Upload
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={handleOpenAdd} // Trigger Add Modal
+            >
+              Add Teacher
+            </Button>
+            <Button icon={<DownOutlined />} size="large" />
+          </Space>
+        </Col>
+      </Row>
 
-          {/* 6.4. Custom Footer/Pagination Bawah */}
-          <Row
-            justify="space-between"
-            align="middle"
-            style={{
-              padding: "8px 0",
-              borderTop: "1px solid #f0f0f0",
-              borderBottom: "1px solid #f0f0f0",
-            }}
-          >
-            {/* Pengaturan Baris per Halaman & Go To */}
-            <Col>
-              <Space>
-                <span style={{ color: "rgba(0,0,0,0.65)" }}>Row per page</span>
-                <Select
-                  value={pageSize}
-                  onChange={(value: number) => handlePageChange(1, value)}
-                  style={{ width: 70 }}
-                  size="small"
-                >
-                  <Option value={10}>10</Option>
-                  <Option value={20}>20</Option>
-                  <Option value={50}>50</Option>
-                </Select>
-
-                <span style={{ color: "rgba(0,0,0,0.65)", marginLeft: 16 }}>
-                  Go to
-                </span>
-                <Input
-                  type="number"
-                  value={currentPage}
-                  min={1}
-                  max={totalPages}
-                  onChange={(e) => handleGoToPage(Number(e.target.value))}
-                  style={{ width: 50, textAlign: "center" }}
-                  size="small"
-                />
-
-                <span style={{ color: "rgba(0,0,0,0.65)", marginLeft: 16 }}>
-                  Total: {totalItems} items
-                </span>
-              </Space>
-            </Col>
-
-            {/* Komponen Pagination Ant Design */}
-            <Col>
-              <Pagination
-                current={currentPage}
-                pageSize={pageSize}
-                total={totalItems}
-                onChange={handlePageChange}
-                showSizeChanger={false}
-                size="small"
-                itemRender={(page, type, originalElement) => {
-                  if (type === "page") {
-                    const isCurrent = page === currentPage;
-                    return (
-                      <span
-                        style={{
-                          padding: "0 8px",
-                          border: isCurrent
-                            ? "1px solid #1890ff"
-                            : "1px solid #d9d9d9",
-                          borderRadius: "2px",
-                          backgroundColor: isCurrent ? "#e6f7ff" : "#fff",
-                          color: isCurrent ? "#1890ff" : "rgba(0,0,0,0.85)",
-                          cursor: "pointer",
-                          display: "inline-block",
-                        }}
-                        onClick={() => handlePageChange(page, pageSize)}
-                      >
-                        {page}
-                      </span>
-                    );
-                  }
-                  return originalElement;
-                }}
-              />
-            </Col>
-          </Row>
-        </Spin>
-      </Content>
-
-      {/* --- Modals (Fungsionalitas Sistem) --- */}
-
-      {/* Modal Tambah Peran Guru */}
-      <AddTeacherRoleModal
-        isModalOpen={isModalOpen}
-        handleCancel={() => setIsModalOpen(false)}
-        onSuccess={fetchData}
+      {/* TABEL dengan Data dari API */}
+      <Table
+        columns={columns}
+        dataSource={data}
+        rowKey="id" // Gunakan ID unik dari API
+        pagination={false}
+        bordered={false}
+        size="middle"
+        style={{ marginBottom: 16 }}
       />
 
-      {/* Modal Edit Peran Guru */}
-      {selectedRecordId !== null && (
-        <EditTeacherRoleModal
-          isModalOpen={isEditModalOpen}
-          handleCancel={() => {
-            setIsEditModalOpen(false);
-            setSelectedRecordId(null);
-          }}
-          onSuccess={fetchData}
-          recordId={selectedRecordId}
-        />
-      )}
+      {/* FOOTER: Pagination Kustom */}
+      <Row justify="space-between" align="middle">
+        <Col>
+          <Space size="middle">
+            <Text>Row per page</Text>
+            <Select
+              value={pageSize.toString()}
+              onChange={() => {
+                /* logika perubahan page size */
+              }}
+              style={{ width: 70 }}
+              disabled // Dinonaktifkan karena simulasi data
+            >
+              <Option value="10">10</Option>
+            </Select>
+            <Text>Go to</Text>
+            <Input
+              value={goToPageInput}
+              onChange={(e) => setGoToPageInput(e.target.value)}
+              onPressEnter={handleGoToPage}
+              style={{ width: 50, textAlign: "center" }}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Pagination
+            current={currentPage}
+            pageSize={pageSize}
+            total={totalRecords}
+            onChange={(page) => setCurrentPage(page)}
+            itemRender={customItemRender}
+            showSizeChanger={false}
+            hideOnSinglePage={true}
+          />
+        </Col>
+      </Row>
 
-      {/* Modal View Peran Guru */}
-      {selectedRecordId !== null && (
-        <ViewTeacherRoleModal
-          isModalOpen={isViewModalOpen}
-          handleCancel={() => {
-            setIsViewModalOpen(false);
-            setSelectedRecordId(null);
-          }}
-          recordId={selectedRecordId}
-        />
-      )}
-    </Layout>
+      {/* MODAL ADD/EDIT */}
+      <AddEditRoleModal
+        isVisible={isModalVisible}
+        mode={modalMode}
+        initialData={editData}
+        onClose={handleModalClose}
+        onSuccess={handleSuccess}
+      />
+
+      {/* Toast Container untuk notifikasi */}
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
+    </div>
   );
-}
+};
+
+export default RoleAssignmentPage;

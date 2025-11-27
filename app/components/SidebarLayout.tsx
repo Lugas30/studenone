@@ -51,7 +51,7 @@ const SidebarLayout: React.FC<React.PropsWithChildren> = ({ children }) => {
     >
       {/* Sidebar */}
       <Sider
-        collapsible
+        // collapsible
         collapsed={collapsed}
         theme="light"
         width={250}
