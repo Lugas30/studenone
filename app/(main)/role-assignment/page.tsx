@@ -20,7 +20,7 @@ import {
   SearchOutlined,
   PlusOutlined,
   UploadOutlined,
-  EyeOutlined,
+  EyeOutlined, // Digunakan untuk fitur View
   EditOutlined,
   DeleteOutlined,
   DownOutlined,
@@ -31,6 +31,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 // Import Modal yang telah di-update untuk menggunakan API
 import AddEditRoleModal from "../../components/AddEditRoleModal"; // Pastikan path file benar
+import ViewRoleModal from "../../components/ViewRoleModal"; // 👈 BARU: Import View Modal
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -40,35 +41,52 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 const API_ENDPOINT = `${BASE_URL}/role-teachers`;
 
 // =======================================================
-// 1. DEFINISI TIPE API
+// 1. DEFINISI TIPE API BARU (DIPERLUKAN UNTUK TYPING)
 // =======================================================
 
 interface Role {
-  id: number; // Tambahkan ID Role untuk kebutuhan Edit
+  id: number;
   role: string;
 }
 
 interface RoleAssignment {
+  role_teacher_id: number;
   role: Role;
 }
 
 interface Teacher {
-  id: number; // Tambahkan ID Teacher untuk kebutuhan Edit
+  id: number;
   nip: string;
   name: string;
   gender: "male" | "female";
 }
 
+interface Classroom {
+  id: number;
+  code: string;
+  class_name: string;
+}
+
+interface Homeroom {
+  id: number;
+  teacher_id: number | null;
+  assistant_id: number | null;
+  classroom_id: number;
+  semester: string;
+  classroom: Classroom;
+}
+
 interface RoleTeacherItem {
-  id: number; // ID RoleTeacher untuk Edit/Delete
+  id: number;
+  teacher_id: number;
   teacher: Teacher;
   role_teacher_assignments: RoleAssignment[];
-  class_id: number | null; // Tambahkan class_id untuk kebutuhan Edit Homebase
 }
 
 interface RoleTeacherResponse {
   academicYear: string;
   data: RoleTeacherItem[];
+  homerooms: Homeroom[];
 }
 
 // Tipe Data untuk Table (Flat Data)
@@ -82,6 +100,7 @@ interface TeacherRoleData {
   role: string; // Gabungan dari semua peran (string)
   roleIds: number[]; // ID Role dalam bentuk array (untuk modal edit)
   classId: number | undefined; // ID Homebase (untuk modal edit)
+  homeroomDisplay: string; // Nama Homebase (Code - Class Name) untuk ditampilkan di tabel
 }
 
 // =======================================================
@@ -95,11 +114,15 @@ const RoleAssignmentPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // State untuk Modal Add/Edit
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState<"add" | "edit">("add");
   const [editData, setEditData] = useState<any>(null);
 
-  // State untuk Pagination
+  // 👈 BARU: State untuk Modal View
+  const [isViewModalVisible, setIsViewModalVisible] = useState(false);
+  const [viewData, setViewData] = useState<TeacherRoleData | null>(null);
+
+  // State untuk Pagination (tetap sama, hanya simulasi)
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
   const totalRecords = 500; // Total record disimulasikan
@@ -114,13 +137,40 @@ const RoleAssignmentPage: React.FC = () => {
     }
     setLoading(true);
     try {
-      // Catatan: API Anda sepertinya tidak mendukung pagination,
-      // jadi ini hanya mengambil semua data. Untuk pagination real,
-      // Anda perlu menambahkan parameter page dan limit ke API_ENDPOINT.
       const response = await axios.get<RoleTeacherResponse>(API_ENDPOINT);
       const apiData = response.data;
 
       setAcademicYear(apiData.academicYear);
+
+      // Map untuk Homebase: teacherId -> { classId, homeroomDisplay }
+      const teacherHomebaseMap = new Map<
+        number,
+        { classId: number; homeroomDisplay: string }
+      >();
+
+      apiData.homerooms.forEach((homeroom) => {
+        // Wali Kelas Utama
+        if (homeroom.teacher_id !== null) {
+          const display = `${homeroom.classroom.code} - ${homeroom.classroom.class_name} `;
+          teacherHomebaseMap.set(homeroom.teacher_id, {
+            classId: homeroom.classroom.id,
+            homeroomDisplay: display,
+          });
+        }
+        // Wali Kelas Asisten
+        if (homeroom.assistant_id !== null) {
+          const display = `${homeroom.classroom.code} - ${homeroom.classroom.class_name} `;
+          if (teacherHomebaseMap.has(homeroom.assistant_id)) {
+            const existing = teacherHomebaseMap.get(homeroom.assistant_id)!;
+            existing.homeroomDisplay += ` & ${display}`;
+          } else {
+            teacherHomebaseMap.set(homeroom.assistant_id, {
+              classId: homeroom.classroom.id,
+              homeroomDisplay: display,
+            });
+          }
+        }
+      });
 
       // Mapping dan Transformasi Data API ke format Table
       const mappedData: TeacherRoleData[] = apiData.data.map((item, index) => {
@@ -134,6 +184,8 @@ const RoleAssignmentPage: React.FC = () => {
           (assignment) => assignment.role.id
         );
 
+        const homebaseInfo = teacherHomebaseMap.get(item.teacher.id);
+
         return {
           key: item.id || index,
           id: item.id,
@@ -143,7 +195,8 @@ const RoleAssignmentPage: React.FC = () => {
           gender: item.teacher.gender === "male" ? "L" : "P",
           role: rolesString || "No Role Assigned",
           roleIds: roleIdsArray,
-          classId: item.class_id || undefined,
+          classId: homebaseInfo?.classId,
+          homeroomDisplay: homebaseInfo?.homeroomDisplay || "-",
         };
       });
 
@@ -161,11 +214,11 @@ const RoleAssignmentPage: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
-  // --- Handler Modal ---
+  // --- Handler Modal ADD/EDIT ---
   const handleOpenAdd = () => {
     setModalMode("add");
     setEditData(null);
-    setIsModalVisible(true);
+    setIsEditModalVisible(true);
   };
 
   const handleOpenEdit = (record: TeacherRoleData) => {
@@ -176,17 +229,27 @@ const RoleAssignmentPage: React.FC = () => {
       roleIds: record.roleIds,
       classId: record.classId,
     });
-    setIsModalVisible(true);
+    setIsEditModalVisible(true);
   };
 
-  const handleModalClose = () => {
-    setIsModalVisible(false);
+  const handleEditModalClose = () => {
+    setIsEditModalVisible(false);
     setEditData(null);
+  };
+
+  // 👈 BARU: Handler Modal VIEW
+  const handleOpenView = (record: TeacherRoleData) => {
+    setViewData(record);
+    setIsViewModalVisible(true);
+  };
+
+  const handleViewModalClose = () => {
+    setIsViewModalVisible(false);
+    setViewData(null);
   };
 
   // Dipanggil setelah sukses Add/Edit di Modal
   const handleSuccess = () => {
-    // Tampilkan toast success sudah dilakukan di modal
     fetchData(); // Muat ulang data tabel
   };
 
@@ -198,13 +261,13 @@ const RoleAssignmentPage: React.FC = () => {
       )
     ) {
       try {
-        // API DELETE: {{base_url}}/role-teachers/{id}
         await axios.delete(`${API_ENDPOINT}/${id}`);
         toast.success("Data peran guru berhasil dihapus!");
         fetchData();
       } catch (error) {
         let errorMessage = "Gagal menghapus data.";
         if (axios.isAxiosError(error) && error.response) {
+          // @ts-ignore
           errorMessage = error.response.data.message || errorMessage;
         }
         toast.error(errorMessage);
@@ -232,7 +295,7 @@ const RoleAssignmentPage: React.FC = () => {
       dataIndex: "gender",
       key: "gender",
       sorter: (a, b) => a.gender.localeCompare(b.gender),
-      width: 100,
+      width: 80,
     },
     {
       title: "Role",
@@ -241,17 +304,25 @@ const RoleAssignmentPage: React.FC = () => {
       sorter: (a, b) => a.role.localeCompare(b.role),
     },
     {
+      title: "Homebase",
+      dataIndex: "homeroomDisplay",
+      key: "homeroomDisplay",
+      sorter: (a, b) => a.homeroomDisplay.localeCompare(b.homeroomDisplay),
+      width: 160,
+    },
+    {
       title: "Actions",
       key: "actions",
-      width: 150,
-      align: "right",
+      width: 100,
+      align: "center",
       render: (_, record) => (
         <Space size="middle">
           <Button
             icon={<EyeOutlined />}
             size="small"
-            title="View"
-            style={{ border: "none" }}
+            title="View Detail"
+            onClick={() => handleOpenView(record)} // 👈 BARU: Trigger View Modal
+            style={{ border: "none", color: "#5bc0de" }}
           />
           <Button
             icon={<EditOutlined />}
@@ -260,7 +331,7 @@ const RoleAssignmentPage: React.FC = () => {
             onClick={() => handleOpenEdit(record)} // Trigger Edit Modal
             style={{ color: "#1890ff", border: "none" }}
           />
-          <Button
+          {/* <Button
             icon={<DeleteOutlined />}
             size="small"
             title="Delete"
@@ -275,13 +346,13 @@ const RoleAssignmentPage: React.FC = () => {
               padding: "0 5px",
               transform: "rotate(-90deg)",
             }}
-          />
+          /> */}
         </Space>
       ),
     },
   ];
 
-  // --- Fungsi Pagination Kustom (Sama seperti sebelumnya) ---
+  // --- Fungsi Pagination Kustom (Dibiarkan sama) ---
   const handleGoToPage = () => {
     const page = parseInt(goToPageInput);
     const maxPage = Math.ceil(totalRecords / pageSize);
@@ -292,7 +363,6 @@ const RoleAssignmentPage: React.FC = () => {
     }
   };
 
-  // Hanya untuk simulasi tampilan seperti gambar
   const customItemRender = (
     current: number,
     type: "page" | "prev" | "next" | "jump-prev" | "jump-next",
@@ -325,7 +395,7 @@ const RoleAssignmentPage: React.FC = () => {
     return originalElement;
   };
 
-  // --- Tampilan Loading dan Error ---
+  // --- Tampilan Loading dan Error (Dibiarkan sama) ---
   if (loading) {
     return (
       <div style={{ padding: "24px", textAlign: "center" }}>
@@ -345,6 +415,7 @@ const RoleAssignmentPage: React.FC = () => {
   // --- Tampilan Utama ---
   return (
     <div style={{ padding: "24px", background: "#fff", minHeight: "100vh" }}>
+      {/* Header dan Filter/Action Buttons (Dibiarkan sama) */}
       <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
         <Col>
           <Breadcrumb style={{ marginBottom: 8, color: "#999" }}>
@@ -388,7 +459,7 @@ const RoleAssignmentPage: React.FC = () => {
               type="primary"
               icon={<PlusOutlined />}
               size="large"
-              onClick={handleOpenAdd} // Trigger Add Modal
+              onClick={handleOpenAdd}
             >
               Add Teacher
             </Button>
@@ -397,29 +468,27 @@ const RoleAssignmentPage: React.FC = () => {
         </Col>
       </Row>
 
-      {/* TABEL dengan Data dari API */}
+      {/* TABEL dengan Data dari API (Dibiarkan sama) */}
       <Table
         columns={columns}
         dataSource={data}
-        rowKey="id" // Gunakan ID unik dari API
+        rowKey="id"
         pagination={false}
         bordered={false}
         size="middle"
         style={{ marginBottom: 16 }}
       />
 
-      {/* FOOTER: Pagination Kustom */}
+      {/* FOOTER: Pagination Kustom (Dibiarkan sama) */}
       <Row justify="space-between" align="middle">
         <Col>
           <Space size="middle">
             <Text>Row per page</Text>
             <Select
               value={pageSize.toString()}
-              onChange={() => {
-                /* logika perubahan page size */
-              }}
+              onChange={() => {}}
               style={{ width: 70 }}
-              disabled // Dinonaktifkan karena simulasi data
+              disabled
             >
               <Option value="10">10</Option>
             </Select>
@@ -447,14 +516,21 @@ const RoleAssignmentPage: React.FC = () => {
 
       {/* MODAL ADD/EDIT */}
       <AddEditRoleModal
-        isVisible={isModalVisible}
+        isVisible={isEditModalVisible}
         mode={modalMode}
         initialData={editData}
-        onClose={handleModalClose}
+        onClose={handleEditModalClose}
         onSuccess={handleSuccess}
       />
 
-      {/* Toast Container untuk notifikasi */}
+      {/* 👈 BARU: MODAL VIEW */}
+      <ViewRoleModal
+        isVisible={isViewModalVisible}
+        data={viewData}
+        onClose={handleViewModalClose}
+      />
+
+      {/* Toast Container untuk notifikasi (Dibiarkan sama) */}
       <ToastContainer
         position="top-right"
         autoClose={5000}

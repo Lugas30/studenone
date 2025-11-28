@@ -383,7 +383,7 @@ const GradeClassroomPage: React.FC = () => {
           form={form}
           layout="vertical"
           onFinish={onFinish}
-          initialValues={{ grade: "1", section: "A" }}
+          initialValues={{ grade: "Grade", section: "Section" }}
           className="mt-4"
         >
           <Form.Item

@@ -31,7 +31,7 @@ const API_CLASSES = `${BASE_URL}/classrooms`;
 const API_ROLES = `${BASE_URL}/roles`;
 
 // =======================================================
-// 1. DEFINISI TIPE API BARU
+// 1. DEFINISI TIPE API
 // =======================================================
 
 // Tipe untuk data dropdown Guru (Teacher)
@@ -67,8 +67,9 @@ interface RoleFormValues {
   classId?: number;
 }
 
-// ID Peran yang memicu munculnya Homebase: Homeroom Teacher (2), Homeroom Assistant (3)
-const HOMEBASE_TRIGGER_ROLES = [2, 3];
+// Pengaturan ID Peran yang memicu munculnya Homebase: Homeroom Teacher (2), Homeroom Assistant (3)
+
+const HOMEBASE_TRIGGER_ROLES = [2, 3]; // Menggunakan ID 3 (Homeroom Teacher) dari data API contoh
 
 // =======================================================
 // 2. TIPE PROPS MODAL
@@ -205,16 +206,23 @@ const AddEditRoleModal: React.FC<AddEditRoleModalProps> = ({
     };
 
     let url = API_ROLE_TEACHERS;
+    let method: "post" | "put" = "post";
     let successMessage = `Tambah data peran guru berhasil!`;
 
     if (mode === "edit" && initialData?.id) {
-      // Skenario Edit: POST ke URL dengan ID di belakangnya
+      // Skenario Edit: Menggunakan PUT ke URL dengan ID
       url = `${API_ROLE_TEACHERS}/${initialData.id}`;
+      method = "put";
       successMessage = `Edit data peran guru berhasil!`;
     }
 
     try {
-      const response = await axios.post(url, payload);
+      // Gunakan axios generic request dengan properti method dan data
+      const response = await axios({
+        method,
+        url,
+        data: payload,
+      });
 
       if (response.status === 201 || response.status === 200) {
         toast.success(successMessage);
@@ -326,9 +334,15 @@ const AddEditRoleModal: React.FC<AddEditRoleModalProps> = ({
                   placeholder="Pilih Homebase"
                   showSearch
                   optionFilterProp="children"
+                  filterOption={(input, option) =>
+                    (option?.children as unknown as string)
+                      ?.toLowerCase()
+                      .includes(input.toLowerCase())
+                  }
                 >
                   {classes.map((c) => (
                     <Option key={c.id} value={c.id}>
+                      {/* PERUBAHAN DI SINI: Tampilkan Kode dan Nama Kelas secara lengkap */}
                       {`${c.code} - ${c.class_name}`}
                     </Option>
                   ))}
