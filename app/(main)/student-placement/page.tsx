@@ -62,7 +62,8 @@ interface PlacementData {
   key: string;
 }
 
-type GradeOption = "1" | "2" | "3" | "4" | "5" | "6";
+// UBAH: Menggunakan nama yang berbeda untuk menghindari konflik saat menggunakan null
+type GradeOptionType = "1" | "2" | "3" | "4" | "5" | "6";
 
 // ---------------------------------------------------
 // 2. DEFINISI KOLOM TABLE
@@ -105,7 +106,7 @@ const placementColumns = (
     key: "fullname",
   },
   {
-    title: "Cancel",
+    title: "",
     key: "action",
     width: "15%",
     render: (text: string, record: PlacementData) => (
@@ -128,13 +129,17 @@ const StudentPlacement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [academicYear, setAcademicYear] = useState("Memuat...");
 
-  const [currentGrade, setCurrentGrade] = useState<GradeOption>("1");
+  // UBAH: Default null
+  const [currentGrade, setCurrentGrade] = useState<GradeOptionType | null>(
+    null
+  );
   const [allStudents, setAllStudents] = useState<Student[]>([]);
 
   const [availableClasses, setAvailableClasses] = useState<Classroom[]>([]);
+  // SUDAH: Default null
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [selectedClassName, setSelectedClassName] =
-    useState<string>("Pilih Kelas");
+    useState<string>("Pilih Kelas"); // SUDAH: Default "Pilih Kelas"
 
   const [placementData, setPlacementData] = useState<PlacementData[]>([]);
   const [selectedStudentKeys, setSelectedStudentKeys] = useState<React.Key[]>(
@@ -157,15 +162,9 @@ const StudentPlacement: React.FC = () => {
         response.data.academicYear || "Tahun Akademik Tidak Ditemukan";
       setAcademicYear(year);
 
-      // Set default kelas ke kelas pertama (setelah diurutkan, ini akan menjadi kelas terkecil)
-      if (data.length > 0) {
-        const defaultClass = [...data].sort((a, b) =>
-          a.code.localeCompare(b.code)
-        )[0];
-        setSelectedClassId(defaultClass.id);
-        setSelectedClassName(defaultClass.code);
-      }
-      toast.success(`Kelas berhasil dimuat. Tahun Akademik: ${year}`);
+      // PASTIKAN Class ID dan Class Name kosong saat dimuat/refresh
+      setSelectedClassId(null);
+      setSelectedClassName("Pilih Kelas");
     } catch (error) {
       toast.error("❌ Gagal memuat data Kelas atau Tahun Akademik.");
       console.error("Error fetching classrooms:", error);
@@ -174,7 +173,16 @@ const StudentPlacement: React.FC = () => {
     }
   }, []);
 
-  const fetchStudents = useCallback(async (grade: GradeOption) => {
+  // UBAH: Terima GradeOptionType | null
+  const fetchStudents = useCallback(async (grade: GradeOptionType | null) => {
+    if (!grade) {
+      // TAMBAH: Pengecekan jika grade null
+      setAllStudents([]);
+      setPlacementData([]);
+      setSelectedStudentKeys([]);
+      return;
+    }
+
     setLoading(true);
     setAllStudents([]);
     setPlacementData([]);
@@ -212,7 +220,15 @@ const StudentPlacement: React.FC = () => {
   }, [fetchClassrooms]);
 
   useEffect(() => {
-    fetchStudents(currentGrade);
+    // TAMBAH: Hanya panggil fetchStudents jika currentGrade BUKAN null
+    if (currentGrade !== null) {
+      fetchStudents(currentGrade);
+    } else {
+      // Kosongkan daftar siswa dan penempatan jika Grade belum dipilih
+      setAllStudents([]);
+      setPlacementData([]);
+      setSelectedStudentKeys([]);
+    }
   }, [currentGrade, fetchStudents]);
 
   // --- Logic Penempatan Siswa (UI Side) ---
@@ -283,7 +299,10 @@ const StudentPlacement: React.FC = () => {
           `✅ ${placementData.length} siswa berhasil ditempatkan di kelas ${selectedClassName}!`
         );
 
-        fetchStudents(currentGrade);
+        // Panggil fetchStudents dengan grade saat ini (yang tidak null)
+        if (currentGrade) {
+          fetchStudents(currentGrade);
+        }
         setPlacementData([]);
       } else {
         toast.error(
@@ -350,9 +369,7 @@ const StudentPlacement: React.FC = () => {
   };
 
   return (
-    <div
-      style={{ padding: 24, minHeight: "100vh", backgroundColor: "#f0f2f5" }}
-    >
+    <div style={{ padding: 24, minHeight: "100vh" }} className="bg-zinc-100">
       <Spin spinning={loading} tip="Memuat Data atau Memproses Penempatan...">
         {/* Header Path */}
         <div style={{ padding: "0 0 16px 0" }}>
@@ -382,21 +399,28 @@ const StudentPlacement: React.FC = () => {
           </Col>
           <Col>
             <Select
+              // UBAH: value sekarang bisa null
               value={currentGrade}
               style={{ minWidth: 120 }}
-              onChange={(value) => setCurrentGrade(value as GradeOption)}
-              options={["1", "2", "3", "4", "5", "6"].map((g) => ({
-                value: g,
-                label: g,
-              }))}
+              // UBAH: Cast ke GradeOptionType
+              onChange={(value) => setCurrentGrade(value as GradeOptionType)}
+              options={[
+                // TAMBAH: Opsi default null/kosong
+                { value: null, label: "Select Grade", disabled: true },
+                ...["1", "2", "3", "4", "5", "6"].map((g) => ({
+                  value: g,
+                  label: g,
+                })),
+              ]}
               disabled={loading}
             />
           </Col>
           <Col>
             <Button
               type="primary"
-              onClick={() => fetchStudents(currentGrade)}
-              disabled={loading}
+              // UBAH: Panggil fetchStudents dengan nilai currentGrade dan tambahkan disabled
+              onClick={() => currentGrade && fetchStudents(currentGrade)}
+              disabled={loading || currentGrade === null}
             >
               Refresh List
             </Button>
@@ -408,10 +432,12 @@ const StudentPlacement: React.FC = () => {
           {/* Kolom Kiri: Students in grade (Tersedia untuk ditempatkan) */}
           <Col span={12}>
             <Card
-              bordered={false}
+              variant="borderless"
               title={
                 <Space size="large">
-                  <Text strong>Students in grade : {currentGrade}</Text>
+                  <Text strong>
+                    Students in grade : {currentGrade || "N/A"}
+                  </Text>
                   <Text type="secondary">
                     Total : {filteredStudents.length}
                   </Text>
@@ -452,7 +478,8 @@ const StudentPlacement: React.FC = () => {
                   disabled={
                     selectedStudentKeys.length === 0 ||
                     loading ||
-                    !selectedClassId
+                    !selectedClassId || // Disabled jika selectedClassId null
+                    currentGrade === null // Disabled jika Grade belum dipilih
                   }
                 >
                   Add to Class
@@ -469,17 +496,24 @@ const StudentPlacement: React.FC = () => {
                 <Space size="large">
                   <Text strong>Class Placement</Text>
                   <Select
+                    // SUDAH: value menggunakan selectedClassId (null)
                     value={selectedClassId}
                     onChange={(value) => {
-                      setSelectedClassId(value);
+                      // UBAH: Pastikan value adalah number atau null
+                      const classId = value as number | null;
+                      setSelectedClassId(classId);
                       const selected = availableClasses.find(
-                        (c) => c.id === value
+                        (c) => c.id === classId
                       );
                       setSelectedClassName(
-                        selected ? selected.code : "Pilih Kelas"
+                        selected ? selected.code : "Select Class"
                       );
                     }}
-                    options={classOptions} // Sudah diurutkan secara ascending
+                    options={[
+                      // TAMBAH: Opsi default null/kosong
+                      { value: null, label: "Select Class", disabled: true },
+                      ...classOptions, // Sudah diurutkan secara ascending
+                    ]}
                     style={{ minWidth: 100 }}
                     disabled={loading}
                   />
@@ -551,7 +585,7 @@ const StudentPlacement: React.FC = () => {
       </Spin>
       <ToastContainer
         position="top-right"
-        autoClose={5000}
+        autoClose={3000}
         hideProgressBar={false}
         newestOnTop={false}
         closeOnClick

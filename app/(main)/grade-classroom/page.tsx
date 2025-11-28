@@ -397,7 +397,7 @@ const GradeClassroomPage: React.FC = () => {
           </Form.Item>
 
           <Form.Item label="Grade and Section" required>
-            <Input.Group compact>
+            <>
               <Form.Item
                 name="grade"
                 noStyle
@@ -407,7 +407,7 @@ const GradeClassroomPage: React.FC = () => {
                   { validator: validateDuplicateClassroom },
                 ]}
               >
-                <Select style={{ width: "40%" }} placeholder="Select Grade">
+                <Select style={{ width: "50%" }} placeholder="Select Grade">
                   {GRADE_OPTIONS.map((grade) => (
                     <Option key={grade} value={grade}>
                       {grade}
@@ -424,7 +424,7 @@ const GradeClassroomPage: React.FC = () => {
                   { validator: validateDuplicateClassroom },
                 ]}
               >
-                <Select style={{ width: "60%" }} placeholder="Select Section">
+                <Select style={{ width: "50%" }} placeholder="Select Section">
                   {SECTION_OPTIONS.map((section) => (
                     <Option key={section} value={section}>
                       Section {section}
@@ -432,7 +432,7 @@ const GradeClassroomPage: React.FC = () => {
                   ))}
                 </Select>
               </Form.Item>
-            </Input.Group>
+            </>
           </Form.Item>
         </Form>
       </Modal>

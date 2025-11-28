@@ -19,23 +19,46 @@ import {
 const { Option } = Select;
 
 // =================================================================
-// ## 1. Definisi Interface (DIPINDAHKAN DAN DISATUKAN)
+// ## 1. Definisi Interface yang Diperbarui 🔄
 // =================================================================
 
-// Data Teacher dari /teachers
-interface TeacherData {
+// Struktur data Role Assignment di dalam /role-teachers
+interface RoleTeacherAssignment {
+  role: {
+    id: number;
+    // Kunci untuk filtering
+    role: string;
+    role_type: number;
+  };
+}
+
+// Struktur data item di array 'data' dari /role-teachers
+interface RoleTeacherData {
+  id: number;
+  teacher_id: number;
+  role_teacher_assignments: RoleTeacherAssignment[];
+  teacher: {
+    id: number;
+    name: string;
+    nip: string;
+    // Properti teacher lainnya dihilangkan untuk keringkasan
+  };
+}
+
+// Data Guru yang difilter dan akan digunakan di Select
+interface FilteredTeacherData {
   id: number;
   name: string;
   nip: string;
 }
 
-// Data Subject dari /subjects
+// Data Subject dari /subjects (Tidak Berubah)
 interface SubjectData {
   id: number;
   name: string;
 }
 
-// Data Classroom dari /classrooms
+// Data Classroom dari /classrooms (Tidak Berubah)
 interface ClassroomData {
   id: number;
   code: string; // P1A, P2B, etc.
@@ -88,7 +111,7 @@ const AddEditSubjectTeacherModal: React.FC<AddEditModalProps> = ({
   const [dataLoading, setDataLoading] = useState(true);
 
   // State untuk menyimpan data dropdown dari API
-  const [teachers, setTeachers] = useState<TeacherData[]>([]);
+  const [teachers, setTeachers] = useState<FilteredTeacherData[]>([]); // Menggunakan tipe FilteredTeacherData
   const [subjects, setSubjects] = useState<SubjectData[]>([]);
   const [classrooms, setClassrooms] = useState<ClassroomData[]>([]);
 
@@ -103,15 +126,34 @@ const AddEditSubjectTeacherModal: React.FC<AddEditModalProps> = ({
     setDataLoading(true);
     try {
       // Mengambil data dari tiga endpoint secara paralel
-      const [teachersRes, subjectsRes, classroomsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/teachers`).then((res) => res.json()),
+      const [roleTeachersRes, subjectsRes, classroomsRes] = await Promise.all([
+        // Menggunakan API baru: /role-teachers
+        fetch(`${API_BASE_URL}/role-teachers`).then((res) => res.json()),
         fetch(`${API_BASE_URL}/subjects`).then((res) => res.json()),
         fetch(`${API_BASE_URL}/classrooms`).then((res) => res.json()),
       ]);
 
-      setTeachers(teachersRes.data || []);
+      // --- LOGIKA FILTERING "Subject Teacher" ---
+      const allRoleTeachers: RoleTeacherData[] = roleTeachersRes.data || [];
+
+      const filteredTeachers: FilteredTeacherData[] = allRoleTeachers
+        // 1. Filter: Cari guru yang memiliki peran "Subject Teacher"
+        .filter((roleTeacherItem) =>
+          roleTeacherItem.role_teacher_assignments.some(
+            (assignment) => assignment.role.role === "Subject Teacher"
+          )
+        )
+        // 2. Map: Ambil data guru yang relevan (id, name, nip)
+        .map((roleTeacherItem) => ({
+          id: roleTeacherItem.teacher.id,
+          name: roleTeacherItem.teacher.name,
+          nip: roleTeacherItem.teacher.nip,
+        }));
+
+      setTeachers(filteredTeachers);
       setSubjects(subjectsRes.data || []);
       setClassrooms(classroomsRes.data || []);
+      // ----------------------------------------
     } catch (error) {
       console.error("Failed to fetch dropdown data:", error);
       message.error("Gagal memuat data guru, mata pelajaran, atau kelas.");
@@ -213,7 +255,7 @@ const AddEditSubjectTeacherModal: React.FC<AddEditModalProps> = ({
         </Button>,
       ]}
     >
-      {/* Tampilan seperti gambar:  */}
+      {/* Tampilan seperti gambar:  */}
       {dataLoading ? (
         <div style={{ textAlign: "center", padding: "50px" }}>
           <Spin tip="Memuat pilihan data..." />
@@ -233,6 +275,7 @@ const AddEditSubjectTeacherModal: React.FC<AddEditModalProps> = ({
                 label="Choose teacher"
                 rules={[{ required: true, message: "Pilih guru!" }]}
               >
+                {/* Hanya menampilkan guru dengan peran "Subject Teacher" */}
                 <Select placeholder="Pilih Guru">
                   {teachers.map((t) => (
                     <Option key={t.id} value={t.id}>

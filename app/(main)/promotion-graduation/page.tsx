@@ -12,13 +12,12 @@ import {
   Input,
   Table,
   Space,
-  Alert,
   Spin,
 } from "antd";
 import type { TableProps } from "antd";
 import { SearchOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import axios from "axios";
-import { toast } from "react-toastify";
+import { toast, ToastContainer } from "react-toastify";
 
 const { Title, Text } = Typography;
 
@@ -43,6 +42,10 @@ interface Student {
 type GradeOption = "new_student" | "1" | "2" | "3" | "4" | "5" | "6";
 type PostGradeOption = "1" | "2" | "3" | "4" | "5" | "6" | "graduated";
 
+// TIPE BARU untuk memungkinkan nilai kosong/belum dipilih pada Select
+type SelectableGradeOption = GradeOption | null;
+type SelectablePostGradeOption = PostGradeOption | null;
+
 // --- 2. Service API (Axios) ---
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -61,8 +64,10 @@ const PromotionGraduationPage: React.FC = () => {
   const [allStudents, setAllStudents] = useState<Student[]>([]);
 
   const [loading, setLoading] = useState(false);
-  const [currentGrade, setCurrentGrade] = useState<GradeOption>("2");
-  const [newGrade, setNewGrade] = useState<PostGradeOption>("3");
+
+  // UBAH: Default state menjadi null (kosong)
+  const [currentGrade, setCurrentGrade] = useState<SelectableGradeOption>(null); // Default: null
+  const [newGrade, setNewGrade] = useState<SelectablePostGradeOption>(null); // Default: null
 
   const [selectedStudentKeys, setSelectedStudentKeys] = useState<React.Key[]>(
     []
@@ -112,6 +117,7 @@ const PromotionGraduationPage: React.FC = () => {
   }, []);
 
   // 3b. Fetch Students based on Current Grade
+  // Parameter harus GradeOption (tidak boleh null) karena ini yang dikirim ke API
   const fetchStudents = useCallback(async (grade: GradeOption) => {
     setLoading(true);
     setAllStudents([]);
@@ -154,13 +160,26 @@ const PromotionGraduationPage: React.FC = () => {
     }
   }, []);
 
+  // UBAH: useEffect hanya akan memanggil fetchStudents jika currentGrade sudah terpilih (bukan null)
   useEffect(() => {
-    fetchStudents(currentGrade);
+    if (currentGrade) {
+      fetchStudents(currentGrade);
+    }
   }, [currentGrade, fetchStudents]);
 
   // --- Logic Promosi Siswa ---
 
   const handleAddToNewGrade = () => {
+    if (selectedStudentKeys.length === 0) {
+      toast.error("Pilih siswa yang akan dipromosikan terlebih dahulu.");
+      return;
+    }
+    // TAMBAHKAN: Validasi newGrade
+    if (!newGrade) {
+      toast.error("Silakan pilih Grade baru terlebih dahulu!");
+      return;
+    }
+
     // 1. Tentukan status siswa baru
     const newStatus: "active" | "graduated" =
       newGrade === "graduated" ? "graduated" : "active";
@@ -170,9 +189,9 @@ const PromotionGraduationPage: React.FC = () => {
       .filter((student) => selectedStudentKeys.includes(student.key))
       .map((student) => ({
         ...student,
-        // Override status_student dengan tipe literal yang valid
+        // Override status_student
         status_student: newStatus,
-      })) as Student[]; // <-- SOLUSI: Type Assertion untuk memastikan tipe kembalian
+      })) as Student[];
 
     // 3. Update state
     setPromotedStudents((prev) => [...prev, ...studentsToPromote]);
@@ -203,6 +222,11 @@ const PromotionGraduationPage: React.FC = () => {
       );
       return;
     }
+    // TAMBAHKAN: Validasi newGrade
+    if (!newGrade) {
+      toast.error("Grade tujuan (New Grade) harus dipilih!");
+      return;
+    }
 
     const studentIds = promotedStudents.map((s) => s.id);
     const targetAcademicYearId = activeAcademicYear.id;
@@ -210,7 +234,7 @@ const PromotionGraduationPage: React.FC = () => {
     const postData = {
       student_id: studentIds,
       academic_year_id: targetAcademicYearId,
-      grade: newGrade,
+      grade: newGrade, // newGrade dijamin PostGradeOption
     };
 
     setLoading(true);
@@ -222,12 +246,20 @@ const PromotionGraduationPage: React.FC = () => {
       );
 
       if (response.data.message === "Promotion Success") {
-        toast.success("✅ Promosi/Kelulusan berhasil diajukan!");
+        toast.success("Promosi/Kelulusan berhasil diajukan!");
       } else {
         toast.success(`Promosi berhasil diajukan: ${response.data.message}`);
       }
 
-      await fetchStudents(currentGrade);
+      // Pastikan currentGrade tidak null sebelum fetch ulang
+      if (currentGrade) {
+        await fetchStudents(currentGrade);
+      } else {
+        // Jika currentGrade null, cukup reset list siswa
+        setAllStudents([]);
+        toast.info("Pilihan grade saat ini hilang, silakan pilih grade lagi.");
+      }
+
       setPromotedStudents([]);
       setSelectedStudentKeys([]);
     } catch (error) {
@@ -301,7 +333,7 @@ const PromotionGraduationPage: React.FC = () => {
       ),
     },
     {
-      title: "Cancel",
+      title: "",
       key: "cancel",
       width: "10%",
       render: (_, record) => (
@@ -328,9 +360,7 @@ const PromotionGraduationPage: React.FC = () => {
   // --- Render Component ---
 
   return (
-    <div
-      style={{ padding: 24, minHeight: "100vh", backgroundColor: "#f0f2f5" }}
-    >
+    <div style={{ padding: 24, minHeight: "100vh" }} className="bg-zinc-100">
       <Spin spinning={loading} tip="Memuat Data atau Memproses Promosi...">
         {/* Header */}
         <div style={{ padding: "0 0 16px 0" }}>
@@ -357,18 +387,30 @@ const PromotionGraduationPage: React.FC = () => {
           </Col>
           <Col>
             <Select
+              // UBAH: value bisa null
               value={currentGrade}
-              onChange={(value) => setCurrentGrade(value as GradeOption)}
+              onChange={(value) =>
+                setCurrentGrade(value as SelectableGradeOption)
+              }
               options={gradeOptions}
               style={{ minWidth: 120 }}
               disabled={loading}
+              placeholder="Select Grade" // Tambahkan placeholder
             />
           </Col>
           <Col>
             <Button
               type="primary"
-              onClick={() => fetchStudents(currentGrade)}
-              disabled={loading}
+              // UBAH: Cek currentGrade sebelum fetch
+              onClick={() => {
+                if (currentGrade) {
+                  fetchStudents(currentGrade);
+                } else {
+                  toast.warn("Silakan pilih Grade saat ini terlebih dahulu.");
+                }
+              }}
+              // UBAH: Disabled jika loading atau currentGrade null
+              disabled={loading || currentGrade === null}
             >
               Apply Grade
             </Button>
@@ -384,14 +426,17 @@ const PromotionGraduationPage: React.FC = () => {
                 <Space size="large">
                   <Text strong>
                     Students in grade :{" "}
-                    {currentGrade.toUpperCase().replace("_", " ")}
+                    {/* Tampilkan nilai atau pesan jika null */}
+                    {currentGrade
+                      ? currentGrade.toUpperCase().replace("_", " ")
+                      : "N/A"}
                   </Text>
                   <Text type="secondary">
                     Student Total : {allStudents.length}
                   </Text>
                 </Space>
               }
-              bordered={false}
+              variant="borderless"
             >
               {/* Search Bar */}
               <Input
@@ -424,7 +469,12 @@ const PromotionGraduationPage: React.FC = () => {
                     fontWeight: "bold",
                   }}
                   onClick={handleAddToNewGrade}
-                  disabled={selectedStudentKeys.length === 0 || loading}
+                  // UBAH: Disabled jika selectedStudentKeys kosong atau newGrade null
+                  disabled={
+                    selectedStudentKeys.length === 0 ||
+                    loading ||
+                    newGrade === null
+                  }
                 >
                   Add to New Grade
                 </Button>
@@ -439,18 +489,22 @@ const PromotionGraduationPage: React.FC = () => {
                 <Space size="large">
                   <Text strong>New Grade</Text>
                   <Select
+                    // UBAH: value bisa null
                     value={newGrade}
-                    onChange={(value) => setNewGrade(value as PostGradeOption)}
+                    onChange={(value) =>
+                      setNewGrade(value as SelectablePostGradeOption)
+                    }
                     options={newGradeOptions}
                     style={{ minWidth: 100 }}
                     disabled={loading}
+                    placeholder="Select New Grade" // Tambahkan placeholder
                   />
                   <Text type="secondary">
                     Student Total : {promotedStudents.length}
                   </Text>
                 </Space>
               }
-              bordered={false}
+              variant="borderless"
             >
               {/* Search Bar */}
               <Input
@@ -503,7 +557,11 @@ const PromotionGraduationPage: React.FC = () => {
               }}
               onClick={handleSubmitPromotion}
               disabled={
-                promotedStudents.length === 0 || loading || !activeAcademicYear
+                // UBAH: Disabled jika promotedStudents kosong, loading, activeAcademicYear null, atau newGrade null
+                promotedStudents.length === 0 ||
+                loading ||
+                !activeAcademicYear ||
+                !newGrade
               }
             >
               Submit Promotion
@@ -511,6 +569,17 @@ const PromotionGraduationPage: React.FC = () => {
           </div>
         </div>
       </Spin>
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
     </div>
   );
 };

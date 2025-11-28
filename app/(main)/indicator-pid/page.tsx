@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Layout,
   Typography,
@@ -11,6 +11,7 @@ import {
   Select,
   Space,
   Pagination,
+  Spin,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -19,84 +20,84 @@ import {
   EyeOutlined,
   EditOutlined,
 } from "@ant-design/icons";
+import axios from "axios";
+// 1. Import useRouter dari next/navigation (Untuk Next.js 13+ App Router)
+import { useRouter } from "next/navigation";
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
 // --- 1. DEFINISI INTERFACE (Tipe Data) ---
-interface SubjectPID {
+
+// Interface untuk setiap objek dalam array 'dataSubject' dari respons API
+interface DataSubject {
+  // Menambahkan ID karena ini data dari API
+  id: number; // Tambahkan jika API mengembalikan ID di level ini (meski tidak ada di body respons API yang Anda berikan, ini adalah praktik umum)
+  periode: string;
+  subject_id: number; // Ini yang penting untuk dikirimkan
+  code: string;
+  name: string;
+  grade: string;
+  kkm: number;
+  category: string;
+  is_ganjil: boolean;
+  is_genap: boolean;
+  academic_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Interface untuk data yang akan ditampilkan di tabel
+interface SubjectPIDTable {
   key: string;
   subjectCode: string;
   subject: string;
   periode: string;
-  grade: number;
+  grade: number; // Ubah ke number
+  kkm: number;
+  category: string;
+  // Menambahkan properti yang diperlukan untuk navigasi/API call berikutnya
+  subject_id: number;
+  original_grade: string; // Menyimpan grade asli (string) jika diperlukan
 }
 
-// --- 2. DATA DUMMY ---
-const initialData: SubjectPID[] = [
-  {
-    key: "1",
-    subjectCode: "MP001",
-    subject: "Matematika",
-    periode: "Triwulan 1",
-    grade: 1,
-  },
-  {
-    key: "2",
-    subjectCode: "MP001",
-    subject: "Matematika",
-    periode: "Triwulan 2",
-    grade: 1,
-  },
-  {
-    key: "3",
-    subjectCode: "MP001",
-    subject: "Matematika",
-    periode: "Triwulan 3",
-    grade: 1,
-  },
-  {
-    key: "4",
-    subjectCode: "MP001",
-    subject: "Matematika",
-    periode: "Triwulan 4",
-    grade: 1,
-  },
-  {
-    key: "5",
-    subjectCode: "MP002",
-    subject: "PKN",
-    periode: "Triwulan 1",
-    grade: 1,
-  },
-  {
-    key: "6",
-    subjectCode: "MP002",
-    subject: "PKN",
-    periode: "Triwulan 2",
-    grade: 1,
-  },
-  // Data tambahan untuk simulasi 50 halaman (500 total record)
-  ...Array.from({ length: 494 }, (_, i) => ({
-    key: String(i + 7),
-    subjectCode: i % 2 === 0 ? "MP003" : "MP004",
-    subject: i % 2 === 0 ? "Bahasa Indonesia" : "Seni Budaya",
-    periode: `Triwulan ${((i + 7) % 4) + 1}`,
-    grade: Math.floor((i + 7) / 100) + 1,
-  })),
-];
+// Interface untuk struktur lengkap respons API
+interface APIResponse {
+  grade: string;
+  dataSubject: DataSubject[];
+}
 
-// --- 3. DEFINISI KOLOM DENGAN TIPE YANG BENAR ---
-const columns: ColumnsType<SubjectPID> = [
+// --- 2. FUNGSI TRANSFORMASI DATA ---
+const transformData = (data: DataSubject[]): SubjectPIDTable[] => {
+  return data.map((item, index) => ({
+    key: `${item.subject_id}-${item.periode}-${index}`,
+    subjectCode: item.code,
+    subject: item.name,
+    periode: item.periode,
+    grade: parseInt(item.grade, 10), // Grade dalam bentuk number untuk tampilan/sorting
+    kkm: item.kkm,
+    category: item.category,
+    subject_id: item.subject_id, // Simpan subject_id
+    original_grade: item.grade, // Simpan grade asli dalam string (misalnya '1')
+  }));
+};
+
+// --- 3. DEFINISI KOLOM DENGAN TIPE YANG BENAR (Diubah menjadi fungsi) ---
+
+// Kolom sekarang menerima fungsi handleEdit sebagai prop
+const getColumns = (
+  handleEdit: (record: SubjectPIDTable) => void
+): ColumnsType<SubjectPIDTable> => [
   {
     title: "Subject Code",
     dataIndex: "subjectCode",
     key: "subjectCode",
-    sorter: (a: SubjectPID, b: SubjectPID) =>
+    sorter: (a: SubjectPIDTable, b: SubjectPIDTable) =>
       a.subjectCode.localeCompare(b.subjectCode),
     align: "left",
-    // Perbaikan: Menambahkan onHeaderCell dan onCell untuk border vertikal dan styling header
     onHeaderCell: () => ({
       style: {
         backgroundColor: "#f0f0f0",
@@ -110,10 +111,9 @@ const columns: ColumnsType<SubjectPID> = [
     title: "Subject",
     dataIndex: "subject",
     key: "subject",
-    sorter: (a: SubjectPID, b: SubjectPID) =>
+    sorter: (a: SubjectPIDTable, b: SubjectPIDTable) =>
       a.subject.localeCompare(b.subject),
     align: "left",
-    // Perbaikan: Menambahkan onHeaderCell dan onCell
     onHeaderCell: () => ({
       style: {
         backgroundColor: "#f0f0f0",
@@ -127,10 +127,9 @@ const columns: ColumnsType<SubjectPID> = [
     title: "Periode",
     dataIndex: "periode",
     key: "periode",
-    sorter: (a: SubjectPID, b: SubjectPID) =>
+    sorter: (a: SubjectPIDTable, b: SubjectPIDTable) =>
       a.periode.localeCompare(b.periode),
     align: "left",
-    // Perbaikan: Menambahkan onHeaderCell dan onCell
     onHeaderCell: () => ({
       style: {
         backgroundColor: "#f0f0f0",
@@ -144,9 +143,36 @@ const columns: ColumnsType<SubjectPID> = [
     title: "Grade",
     dataIndex: "grade",
     key: "grade",
-    sorter: (a: SubjectPID, b: SubjectPID) => a.grade - b.grade,
+    sorter: (a: SubjectPIDTable, b: SubjectPIDTable) => a.grade - b.grade,
     align: "left",
-    // Perbaikan: Menambahkan onHeaderCell dan onCell
+    onHeaderCell: () => ({
+      style: {
+        backgroundColor: "#f0f0f0",
+        fontWeight: "bold",
+        borderRight: "1px solid #f0f0f0",
+      },
+    }),
+    onCell: () => ({ style: { borderRight: "1px solid #f0f0f0" } }),
+  },
+  {
+    title: "Category",
+    dataIndex: "category",
+    key: "category",
+    align: "left",
+    onHeaderCell: () => ({
+      style: {
+        backgroundColor: "#f0f0f0",
+        fontWeight: "bold",
+        borderRight: "1px solid #f0f0f0",
+      },
+    }),
+    onCell: () => ({ style: { borderRight: "1px solid #f0f0f0" } }),
+  },
+  {
+    title: "KKM",
+    dataIndex: "kkm",
+    key: "kkm",
+    align: "center",
     onHeaderCell: () => ({
       style: {
         backgroundColor: "#f0f0f0",
@@ -160,7 +186,6 @@ const columns: ColumnsType<SubjectPID> = [
     title: "Actions",
     key: "actions",
     align: "center",
-    // Perbaikan: Menambahkan onHeaderCell dan onCell
     onHeaderCell: () => ({
       style: {
         backgroundColor: "#f0f0f0",
@@ -169,7 +194,7 @@ const columns: ColumnsType<SubjectPID> = [
       },
     }),
     onCell: () => ({ style: { borderRight: "1px solid #f0f0f0" } }),
-    render: (_, record: SubjectPID) => (
+    render: (_, record: SubjectPIDTable) => (
       <Space size={4}>
         <Button
           icon={<EyeOutlined />}
@@ -177,11 +202,12 @@ const columns: ColumnsType<SubjectPID> = [
           style={{ padding: "0 4px", color: "#1890ff" }}
           onClick={() => console.log("View", record)}
         />
+        {/* 4. Panggil handleEdit saat tombol Edit diklik */}
         <Button
           icon={<EditOutlined />}
           type="text"
-          style={{ padding: "0 4px", color: "#1890ff" }}
-          onClick={() => console.log("Edit", record)}
+          style={{ padding: "0 4px", color: "#faad14" }} // Ubah warna untuk Edit
+          onClick={() => handleEdit(record)}
         />
       </Space>
     ),
@@ -190,18 +216,106 @@ const columns: ColumnsType<SubjectPID> = [
 
 // --- 4. KOMPONEN HALAMAN ---
 const PersonalIndicatorPage = () => {
-  const [currentPage, setCurrentPage] = useState(6);
-  const [pageSize, setPageSize] = useState(10);
-  const totalRecords = initialData.length;
+  // Inisialisasi router
+  const router = useRouter();
 
+  // State untuk Data API
+  const [data, setData] = useState<SubjectPIDTable[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // State untuk Grade yang dipilih (default ke Grade 1)
+  const [selectedGrade, setSelectedGrade] = useState<string>("1");
+  // State untuk Grade yang akan diterapkan (untuk tombol "Apply Filter")
+  const [appliedGrade, setAppliedGrade] = useState<string>("1");
+
+  // State untuk Pagination (sesuaikan dengan data real)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalRecords = data.length;
+
+  // Fungsi untuk mengambil data dari API
+  const fetchDataByGrade = useCallback(async (grade: string) => {
+    if (!BASE_URL) {
+      setError("NEXT_PUBLIC_API_URL is not defined in .env");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setData([]);
+
+    try {
+      // URL API untuk mengambil daftar Subject per Grade
+      const apiUrl = `${BASE_URL}/indicator-pid/grade?grade=${grade}`;
+      const response = await axios.get<APIResponse>(apiUrl);
+
+      if (response.data && Array.isArray(response.data.dataSubject)) {
+        const transformedData = transformData(response.data.dataSubject);
+        setData(transformedData);
+        setCurrentPage(1);
+      } else {
+        setData([]);
+        setError("Format data API tidak sesuai atau dataSubject kosong.");
+      }
+    } catch (err) {
+      console.error("Error fetching data:", err);
+      if (axios.isAxiosError(err)) {
+        setError(`Gagal mengambil data: ${err.message}`);
+      } else {
+        setError("Terjadi kesalahan saat mengambil data.");
+      }
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Dipanggil saat komponen pertama kali dimuat dan saat appliedGrade berubah
+  useEffect(() => {
+    fetchDataByGrade(appliedGrade);
+  }, [appliedGrade, fetchDataByGrade]);
+
+  // --- 5. Fungsi handleEdit untuk Navigasi dan Mengirim Data (PERBAIKAN PERIODE) ---
+  const handleEdit = (record: SubjectPIDTable) => {
+    const { original_grade, subject_id, periode } = record;
+
+    // Pastikan nilai periode menggunakan lowercase dan underscore jika aslinya mengandung spasi atau huruf besar,
+    // namun karena data dari API sudah diasumsikan seperti 'triwulan_1', kita hanya perlu
+    // menggunakan encodeURIComponent untuk memastikan keamanan URL, dan menggunakan 'priode'
+    // sebagai nama parameter sesuai permintaan.
+    const encodedPeriode = encodeURIComponent(
+      periode.toLowerCase().replace(/ /g, "_")
+    );
+
+    // Membuat URL dengan Query Parameter
+    // Menggunakan 'priode' sebagai nama parameter dan nilai yang sudah di-encode
+    const url = `/indicator-pid/subject?grade=${original_grade}&subject_id=${subject_id}&priode=${encodedPeriode}`;
+
+    // Navigasi ke halaman tujuan
+    router.push(url);
+  };
+  // -------------------------------------------------------------
+
+  // Handler untuk Select Grade
+  const handleGradeChange = (value: string) => {
+    setSelectedGrade(value);
+  };
+
+  // Handler untuk tombol Apply Filter
+  const handleApplyFilter = () => {
+    setAppliedGrade(selectedGrade);
+  };
+
+  // Handler untuk Pagination
   const handlePageChange = (page: number, size: number) => {
     setCurrentPage(page);
     setPageSize(size);
   };
 
+  // Logika untuk menampilkan data per halaman
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
-  const dataToShow = initialData.slice(startIndex, endIndex);
+  const dataToShow = data.slice(startIndex, endIndex);
 
   return (
     <Layout style={{ minHeight: "100vh", backgroundColor: "#fff" }}>
@@ -213,7 +327,7 @@ const PersonalIndicatorPage = () => {
           width: "100%",
         }}
       >
-        {/* Header Area: Home / Personal Indicator dan 2024-2025 */}
+        {/* Header Area ... (Konten tidak diubah) */}
         <div
           style={{
             display: "flex",
@@ -249,27 +363,26 @@ const PersonalIndicatorPage = () => {
           </Title>
         </div>
 
-        {/* --- HR --- (Garis pemisah seperti di gambar) */}
         <div
           style={{ borderBottom: "1px solid #f0f0f0", margin: "16px 0 24px 0" }}
         ></div>
 
-        {/* Alert / Peringatan */}
+        {/* Alert / Peringatan ... (Konten tidak diubah) */}
         <Alert
           message={
             <>
               Pastikan data pada menu <Text strong>Subject</Text> telah diisi
-              terlebih dahulu. Pilih <Text strong>Filter Grade</Text> untuk
-              menampilkan data sesuai dengan <Text strong>Grade</Text>.
+              terlebih dahulu. Saat ini menampilkan data untuk{" "}
+              <Text strong>Grade {appliedGrade}</Text>.
             </>
           }
-          type="warning"
+          type="info"
           showIcon={false}
           style={{
             marginBottom: "24px",
-            backgroundColor: "#fffbe6", // Warna kuning terang
-            borderColor: "#ffe58f", // Border kuning
-            color: "#faad14", // Warna teks kuning-oranye
+            backgroundColor: "#e6f7ff",
+            borderColor: "#91d5ff",
+            color: "#1890ff",
             padding: "12px 16px",
             borderRadius: "2px",
             fontSize: "14px",
@@ -277,12 +390,12 @@ const PersonalIndicatorPage = () => {
           }}
         />
 
-        {/* Sub Judul Subject PID */}
+        {/* Sub Judul Subject PID ... (Konten tidak diubah) */}
         <Title level={3} style={{ marginBottom: "16px", fontSize: "20px" }}>
           Subject PID
         </Title>
 
-        {/* Filter dan Search Bar */}
+        {/* Filter dan Search Bar ... (Konten tidak diubah) */}
         <div
           style={{
             marginBottom: "16px",
@@ -297,49 +410,78 @@ const PersonalIndicatorPage = () => {
             style={{ width: 300, borderRadius: "2px", height: "32px" }}
           />
           <Space size={8}>
+            {/* Select Grade */}
             <Select
-              defaultValue="1"
-              style={{ width: 120 }}
+              value={selectedGrade}
+              style={{ width: 140 }}
               placeholder="Pilih Grade"
+              onChange={handleGradeChange}
+              disabled={loading}
             >
-              <Option value="1">Grade 1</Option>
-              <Option value="2">Grade 2</Option>
+              {Array.from({ length: 6 }, (_, i) => i + 1).map((grade) => (
+                <Option key={grade} value={String(grade)}>
+                  Grade {grade}
+                </Option>
+              ))}
             </Select>
+
+            {/* Tombol Apply Filter */}
             <Button
               type="primary"
               style={{
-                backgroundColor: "#52c41a", // Warna hijau
+                backgroundColor: "#52c41a",
                 borderColor: "#52c41a",
                 borderRadius: "2px",
                 height: "32px",
                 fontWeight: "normal",
               }}
+              onClick={handleApplyFilter}
+              loading={loading}
+              disabled={loading || selectedGrade === appliedGrade}
             >
               Apply Filter
             </Button>
             <Button
               icon={<DownloadOutlined />}
               style={{ height: "32px", borderRadius: "2px" }}
+              disabled={loading}
             />
           </Space>
         </div>
 
-        {/* Table */}
-        <Table
-          columns={columns}
-          dataSource={dataToShow}
-          pagination={false}
-          bordered={true}
-          style={{ marginBottom: "16px" }}
-          // rowClassName="ant-table-row-striped" // Dinonaktifkan, karena mungkin menyebabkan ketidaksesuaian warna
-        />
+        {/* Notifikasi Error ... (Konten tidak diubah) */}
+        {error && (
+          <Alert
+            message="Error"
+            description={error}
+            type="error"
+            showIcon
+            style={{ marginBottom: "16px" }}
+          />
+        )}
 
-        {/* --- HR --- (Garis pemisah seperti di gambar) */}
+        {/* Table / Loading */}
+        <Spin spinning={loading} tip="Memuat data mata pelajaran...">
+          <Table
+            // 6. Gunakan getColumns(handleEdit)
+            columns={getColumns(handleEdit)}
+            dataSource={dataToShow}
+            pagination={false}
+            bordered={true}
+            style={{ marginBottom: "16px" }}
+            locale={{
+              emptyText: error
+                ? "Gagal memuat data"
+                : "Tidak ada data untuk Grade ini",
+            }}
+          />
+        </Spin>
+
         <div
           style={{ borderBottom: "1px solid #f0f0f0", margin: "16px 0 24px 0" }}
         ></div>
 
-        {/* Custom Footer Pagination */}
+        {/* Custom Footer Pagination ... (Konten tidak diubah) */}
         <div
           style={{
             display: "flex",
@@ -387,7 +529,8 @@ const PersonalIndicatorPage = () => {
               max={Math.ceil(totalRecords / pageSize)}
               onChange={(e) => {
                 const page = Number(e.target.value);
-                if (page > 0 && page <= Math.ceil(totalRecords / pageSize)) {
+                const maxPage = Math.ceil(totalRecords / pageSize);
+                if (page > 0 && page <= maxPage) {
                   setCurrentPage(page);
                 }
               }}
@@ -401,63 +544,6 @@ const PersonalIndicatorPage = () => {
             total={totalRecords}
             showSizeChanger={false}
             onChange={handlePageChange}
-            // Menggabungkan logika tampilan angka dan styling aktif
-            itemRender={(page, type, originalElement) => {
-              if (
-                type === "prev" ||
-                type === "next" ||
-                type === "jump-prev" ||
-                type === "jump-next"
-              ) {
-                return originalElement;
-              }
-
-              const totalPages = Math.ceil(totalRecords / pageSize);
-              let shouldDisplay = false;
-
-              // Tampilkan halaman 1 dan totalPages (50)
-              if (page === 1 || page === totalPages) {
-                shouldDisplay = true;
-              }
-              // Tampilkan halaman di sekitar current page (misal 2 sebelum dan 2 sesudah)
-              else if (Math.abs(page - currentPage) <= 2) {
-                // Menampilkan 4, 5, [6], 7, 8
-                shouldDisplay = true;
-              }
-              // Tampilkan '...' jika ada gap
-              else if (
-                (page === currentPage - 3 && page > 1) ||
-                (page === currentPage + 3 && page < totalPages)
-              ) {
-                return (
-                  <span className="ant-pagination-item-ellipsis">...</span>
-                );
-              }
-
-              if (!shouldDisplay) {
-                return null;
-              }
-
-              // Jika halaman harus ditampilkan, terapkan styling aktif jika perlu
-              if (page === currentPage) {
-                return (
-                  <a
-                    className="ant-pagination-item ant-pagination-item-active"
-                    style={{
-                      backgroundColor: "#1890ff", // Warna biru untuk aktif
-                      borderColor: "#1890ff",
-                      color: "#fff", // Teks putih
-                      borderRadius: "2px",
-                    }}
-                  >
-                    {page}
-                  </a>
-                );
-              }
-
-              // Untuk halaman non-aktif yang ditampilkan
-              return originalElement;
-            }}
           />
         </div>
       </Content>
