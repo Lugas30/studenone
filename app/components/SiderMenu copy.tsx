@@ -1,30 +1,21 @@
 // components/Layout/SiderMenu.tsx
 "use client";
 
-import { Menu, MenuProps } from "antd";
+import { Menu, MenuProps } from "antd"; // Import MenuProps untuk typing
 import {
   AppstoreOutlined,
   SolutionOutlined,
   FolderOpenOutlined,
   UserOutlined,
   FileTextOutlined,
+  // Tambahkan ikon lain jika diperlukan
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React, { useState, useEffect } from "react";
+import React from "react";
 
-// --- PERBAIKAN 1: DEFINISI TIPE MENUITEM ---
-
-// Definisikan tipe dasar dari MenuItem Ant Design
-type AntdMenuItem = Required<MenuProps>["items"][number];
-
-// Perluas tipe AntdMenuItem, tambahkan pemeriksaan untuk memastikan item memiliki 'children'
-// Tipe ini akan digunakan dalam logika rekursif di bawah.
-type MenuItem = AntdMenuItem & {
-  path?: string;
-  // Membantu TypeScript mengetahui kapan sebuah item adalah SubMenu:
-  children?: MenuItem[];
-};
+// Definisikan tipe untuk Item Menu Ant Design
+type MenuItem = Required<MenuProps>["items"][number];
 
 // --- FUNGSI UTILITY MENU ---
 
@@ -36,68 +27,18 @@ function getItem(
   children?: MenuItem[],
   type?: "group"
 ): MenuItem {
-  const path = typeof key === "string" ? key : undefined;
-
   return {
     key,
     icon,
     children,
     label,
     type,
-    path: path,
-  } as MenuItem; // Assertion karena kita tahu struktur yang kita buat
+  } as MenuItem;
 }
 
-// --- FUNGSI REKURSIF PERBAIKAN TS2339 ---
-
-// Fungsi rekursif untuk mencari semua parent keys yang harus terbuka
-const getOpenKeysFromPath = (
-  items: MenuItem[],
-  currentPath: string
-): string[] => {
-  const openKeys: string[] = [];
-
-  const findKeys = (
-    currentItems: MenuItem[],
-    parentKeys: string[]
-  ): boolean => {
-    for (const item of currentItems) {
-      // PERBAIKAN 2: Pemeriksaan Tipe untuk mengakses 'children'
-      // Ant Design memerlukan pemeriksaan 'children' ada di dalam objek
-      // dan pastikan item tersebut BUKAN bertipe 'group' atau 'divider'
-      const isSubMenu = item && "children" in item && item.type !== "group";
-
-      // 1. Cek apakah item saat ini adalah path yang dicari
-      // Kita harus memastikan 'key' ada dan bertipe string untuk perbandingan path
-      if (item && typeof item.key === "string" && item.key === currentPath) {
-        // Jika path ditemukan, tambahkan semua parent key
-        openKeys.push(...parentKeys);
-        return true;
-      }
-
-      // 2. Jika item adalah Submenu (sudah lolos pemeriksaan isSubMenu)
-      if (isSubMenu && item.children && item.children.length > 0) {
-        const currentKey = item.key as string;
-        // Tambahkan key saat ini ke daftar parent untuk rekursi
-        if (
-          findKeys(item.children as MenuItem[], [...parentKeys, currentKey])
-        ) {
-          // Jika ditemukan di level yang lebih dalam, key saat ini sudah ditambahkan
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-
-  findKeys(items, []);
-  return Array.from(new Set(openKeys));
-};
-
-// --- STRUKTUR MENU (TETAP SAMA) ---
-
+// Struktur menu dengan 'group' untuk pemisah/judul section
 const items: MenuItem[] = [
-  // --- 1. DASHBOARD ---
+  // --- 1. SEPARATOR/GROUP UNTUK DASHBOARD ---
   getItem("Dashboard", "group-dashboard", null, undefined, "group"),
   getItem(
     <Link href="/dashboard">Dashboard</Link>,
@@ -110,12 +51,12 @@ const items: MenuItem[] = [
     <SolutionOutlined />
   ),
 
-  // --- 2. MASTER DATA ---
+  // --- 2. SEPARATOR/GROUP UNTUK MASTER DATA ---
   getItem("Master Data", "group-master-data", null, undefined, "group"),
   // Submenu "Academic & Curriculum"
   getItem(
     "Academic & Curriculum",
-    "master-data-academic-curriculum", // Key untuk submenu parent
+    "master-data-academic-curriculum",
     <FolderOpenOutlined />,
     [
       getItem(
@@ -144,7 +85,7 @@ const items: MenuItem[] = [
     getItem(<Link href="/students">Students</Link>, "/students"),
   ]),
 
-  // --- 3. ENROLLMENT ---
+  // --- 3. SEPARATOR/GROUP UNTUK ENROLLMENT ---
   getItem("Enrollment", "group-enrollment", null, undefined, "group"),
   // Submenu "Assignment"
   getItem("Assignment", "enrollment-assignment", <FileTextOutlined />, [
@@ -170,7 +111,7 @@ const items: MenuItem[] = [
     ),
   ]),
 
-  // --- 4. ATTENDANCE, HEALTH & INDICATOR ---
+  // --- 4. SEPARATOR/GROUP UNTUK ATTENDANCE, HEALTH & INDICATOR ---
   getItem(
     "Attendance, Health & Indicator",
     "group-attendance-health-indicator",
@@ -178,21 +119,28 @@ const items: MenuItem[] = [
     undefined,
     "group"
   ),
-  // Submenu "Report"
-  getItem("Report", "report-daily-monthly", <FileTextOutlined />, [
-    getItem(
-      <Link href="/student-attendance">Student Attendance</Link>,
-      "/student-attendance"
-    ),
-    getItem(
-      <Link href="/student-attendance-qurans">Student Attendance Qurans</Link>,
-      "/student-attendance-qurans"
-    ),
-    getItem(
-      <Link href="/student-health-condition">Student Health Condition</Link>,
-      "/student-health-condition"
-    ),
-  ]),
+  // Submenu "Daily & Monthly Report"
+  getItem(
+    "Daily & Monthly Report",
+    "report-daily-monthly",
+    <FileTextOutlined />,
+    [
+      getItem(
+        <Link href="/student-attendance">Student Attendance</Link>,
+        "/student-attendance"
+      ),
+      getItem(
+        <Link href="/student-attendance-qurans">
+          Student Attendance Qurans
+        </Link>,
+        "/student-attendance-qurans"
+      ),
+      getItem(
+        <Link href="/student-health-condition">Student Health Condition</Link>,
+        "/student-health-condition"
+      ),
+    ]
+  ),
 
   // Submenu "Indicator Input"
   getItem("Indicator Input", "input-indicator", <FileTextOutlined />, [
@@ -217,7 +165,7 @@ const items: MenuItem[] = [
     getItem(<Link href="/indicator-pid">Indicator PID</Link>, "/indicator-pid"),
   ]),
 
-  // --- 5. ASSESSMENT & REPORT INPUT ---
+  // --- 5. SEPARATOR/GROUP UNTUK ASSESSMENT & REPORT INPUT ---
   getItem(
     "Assessment Report Input",
     "group-assessment-report",
@@ -260,10 +208,10 @@ const items: MenuItem[] = [
     ),
   ]),
 
-  // Item Laporan Lainnya
+  // Item Laporan Lainnya (Sejajar dengan Academic Report)
   getItem(
     <Link href="/parents-report">Parents Report</Link>,
-    "/parents-report",
+    "/assessment/parents-report",
     <FileTextOutlined />
   ),
 
@@ -271,27 +219,27 @@ const items: MenuItem[] = [
   getItem("Qurans Report", "assessment-qurans-report", <FileTextOutlined />, [
     getItem(
       <Link href="/qurans-report/tahsin">Tahsin</Link>,
-      "/qurans-report/tahsin"
+      "/assessment/qurans-report/tahsin"
     ),
     getItem(
       <Link href="/qurans-report/hapalan">Hapalan</Link>,
-      "/qurans-report/hapalan"
+      "/assessment/qurans-report/hapalan"
     ),
   ]),
 
-  // Item Laporan Lainnya
+  // Item Laporan Lainnya (Sejajar dengan Academic Report)
   getItem(
     <Link href="/excul-report">Excul Report</Link>,
-    "/excul-report",
+    "/assessment/excul-report",
     <FileTextOutlined />
   ),
   getItem(
     <Link href="/report-pid">PID Report</Link>,
-    "/report-pid",
+    "/assessment/pid-report-assessment",
     <FileTextOutlined />
   ),
 
-  // --- 6. Preview & Download Report ---
+  // --- 6. SEPARATOR/GROUP Preview & Download Report ---
   getItem(
     "Preview & Download Report",
     "group-preview-download",
@@ -299,57 +247,110 @@ const items: MenuItem[] = [
     undefined,
     "group"
   ),
-  // Submenu: PID Report
-  getItem("PID Report", "preview-download-pid-report", <FileTextOutlined />, [
+  // Submenu: Qurans Report
+  getItem("PID Report", "PID Report", <FileTextOutlined />, [
     getItem(
       <Link href="/access-preview-pid">Access & Preview</Link>,
-      "/access-preview-pid"
+      "/PID Report/Access & Preview"
     ),
     getItem(
       <Link href="/download-or-print-pid">Download or Print</Link>,
-      "/download-or-print-pid"
+      "/PID Report/Download or Print"
     ),
   ]),
 ];
 
-// --- KOMPONEN UTAMA (TETAP SAMA) ---
-
 const SiderMenu: React.FC = () => {
   const pathname = usePathname();
 
-  // 1. Hitung item yang saat ini dipilih
+  // Hitung item yang saat ini dipilih
   const selectedKeys = [pathname];
 
-  // 2. Tentukan initial open keys berdasarkan path saat ini
-  const initialOpenKeys = React.useMemo(
-    () => getOpenKeysFromPath(items, pathname),
-    [pathname]
-  );
+  // Fungsi utilitas untuk menemukan key yang harus diperluas (tidak ada perubahan pada fungsi ini)
+  const getOpenKeys = (items: MenuItem[], currentPath: string): string[] => {
+    const keys: string[] = [];
+    items.forEach((item) => {
+      // Hanya proses item yang memiliki children (submenu) dan bukan group
+      if (
+        item &&
+        "children" in item &&
+        item.children &&
+        item.type !== "group"
+      ) {
+        // Cek apakah salah satu child key cocok dengan pathname
+        const isChildActive = item.children.some(
+          (child) => child && "key" in child && child.key === currentPath
+        );
 
-  // 3. Gunakan state untuk mengontrol openKeys
-  const [openKeys, setOpenKeys] = useState<string[]>(initialOpenKeys);
+        // Cek apakah child adalah submenu, dan salah satu cucunya aktif
+        const isGrandChildActive = item.children.some(
+          (child) =>
+            child &&
+            "children" in child &&
+            child.children &&
+            child.children.some(
+              (grandchild) =>
+                grandchild &&
+                "key" in grandchild &&
+                grandchild.key === currentPath
+            )
+        );
 
-  // Efek untuk memperbarui openKeys saat pathname berubah (navigasi)
-  useEffect(() => {
-    const newOpenKeys = getOpenKeysFromPath(items, pathname);
-    // Gabungkan openKeys lama dengan openKeys baru
-    setOpenKeys((prevKeys) =>
-      Array.from(new Set([...prevKeys, ...newOpenKeys]))
-    );
-  }, [pathname]);
-
-  // Handler untuk mengontrol openKeys saat pengguna mengklik submenu
-  const onOpenChange = (keys: string[]) => {
-    setOpenKeys(keys);
+        if (isChildActive || isGrandChildActive) {
+          // Tambahkan key dari submenu (parent) ke daftar openKeys
+          keys.push(item.key as string);
+        }
+      }
+    });
+    return keys;
   };
+
+  // Fungsi utilitas untuk menemukan key submenu bersarang (nested) yang harus diperluas
+  const getNestedOpenKeys = (
+    items: MenuItem[],
+    currentPath: string
+  ): string[] => {
+    const nestedKeys: string[] = [];
+    items.forEach((item) => {
+      if (item && "children" in item && item.children) {
+        item.children.forEach((child) => {
+          if (
+            child &&
+            "children" in child &&
+            child.children &&
+            child.type !== "group" // Pastikan bukan group di level ini juga
+          ) {
+            // Cek apakah salah satu grand-child key cocok dengan pathname
+            const isGrandChildActive = child.children.some(
+              (grandchild) =>
+                grandchild &&
+                "key" in grandchild &&
+                grandchild.key === currentPath
+            );
+            if (isGrandChildActive) {
+              // Tambahkan key dari submenu bersarang (child) ke daftar openKeys
+              nestedKeys.push(child.key as string);
+            }
+          }
+        });
+      }
+    });
+    return nestedKeys;
+  };
+
+  // Gabungkan openKeys dari parent dan nested submenu
+  const parentOpenKeys = getOpenKeys(items, pathname);
+  const nestedOpenKeys = getNestedOpenKeys(items, pathname);
+  // Tambahkan semua key submenu bersarang yang aktif ke daftar openKeys utama
+  const openKeys = [...new Set([...parentOpenKeys, ...nestedOpenKeys])];
 
   return (
     <Menu
       theme="light"
       mode="inline"
       selectedKeys={selectedKeys}
-      openKeys={openKeys}
-      onOpenChange={onOpenChange}
+      // Gunakan state untuk openKeys jika ingin mengontrol perilaku expand/collapse sepenuhnya (opsional)
+      defaultOpenKeys={openKeys}
       items={items}
       style={{ borderRight: 0 }}
     />
