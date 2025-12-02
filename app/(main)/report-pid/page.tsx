@@ -67,7 +67,7 @@ interface PidAssignment {
   code: string;
   grade: string;
   class_name: string;
-  status: "true" | "false" | "-"; // PERUBAHAN LOGIKA: "true" = Open, "false" = Submitted/Closed
+  status: "true" | "false" | "-"; // "true" = Open, "false" = Submitted/Closed
   publish: "true" | "false" | "-";
 }
 
@@ -75,9 +75,14 @@ interface PidAssignment {
 interface SubjectCardProps {
   data: SubjectAssessment;
   onInputReport: (data: SubjectAssessment) => void;
+  isDisabled: boolean;
 }
 
-const SubjectCard: React.FC<SubjectCardProps> = ({ data, onInputReport }) => {
+const SubjectCard: React.FC<SubjectCardProps> = ({
+  data,
+  onInputReport,
+  isDisabled,
+}) => {
   const greenColor = "#52c41a";
 
   return (
@@ -89,6 +94,7 @@ const SubjectCard: React.FC<SubjectCardProps> = ({ data, onInputReport }) => {
       </div>
 
       <Space size="small" style={{ marginTop: "10px" }}>
+        {/* Tombol View Indicator: TIDAK DI-DISABLE */}
         <Button
           type="default"
           style={{
@@ -99,6 +105,7 @@ const SubjectCard: React.FC<SubjectCardProps> = ({ data, onInputReport }) => {
         >
           View Indicator
         </Button>
+        {/* Tombol Input Report: DI-DISABLE JIKA isClosed/isDisabled TRUE */}
         <Button
           type="primary"
           style={{
@@ -107,8 +114,9 @@ const SubjectCard: React.FC<SubjectCardProps> = ({ data, onInputReport }) => {
             color: "#fff",
           }}
           onClick={() => onInputReport(data)}
+          disabled={isDisabled}
         >
-          Input Report
+          {isDisabled ? "Report Closed" : "Input Report"}
         </Button>
       </Space>
     </Card>
@@ -143,6 +151,8 @@ const PIDReportAssessmentPage: React.FC = () => {
   const [loadingClass, setLoadingClass] = useState(false);
   const [loadingSubjects, setLoadingSubjects] = useState(false);
   const [loadingAssignment, setLoadingAssignment] = useState(false);
+  // 💡 STATE BARU: Loading untuk proses Submit
+  const [loadingSubmit, setLoadingSubmit] = useState(false);
 
   // --- Data Fetching ---
 
@@ -258,13 +268,57 @@ const PIDReportAssessmentPage: React.FC = () => {
     // 2. Tentukan Path Parameters dan Construct URL
     const grade = currentClassroom.grade;
     const subjectId = subjectData.subject_id.toString();
-    // 💡 PERBAIKAN: Ambil classroomId dari subjectData
     const classroomId = subjectData.classroom_id.toString();
 
-    // 💡 PERBAIKAN: Tambahkan classroomId ke path URL
     const path = `/pid-report-input/${grade}/${subjectId}/${formattedPeriode}/${classroomId}`;
 
     router.push(path);
+  };
+
+  /**
+   * 💡 FUNGSI BARU: Menangani klik submit dan memanggil API CLOSE.
+   */
+  const handleSubmitAssessment = async () => {
+    if (!selectedClassId || !selectedTriwulan) {
+      message.error("Data Kelas atau Periode tidak lengkap.");
+      return;
+    }
+
+    // Tentukan pid_assessment_id berdasarkan triwulan
+    const triwulanNumber = parseInt(selectedTriwulan.replace(/[^0-9]/g, ""));
+    const pidAssessmentId = triwulanNumber % 2 !== 0 ? 1 : 2;
+
+    const payload = {
+      pid_assessment_id: pidAssessmentId,
+    };
+
+    setLoadingSubmit(true);
+    message.loading({
+      content: "Submitting assessment...",
+      key: "submitKey",
+      duration: 0,
+    });
+
+    try {
+      await axios.post(`${API_URL}/pid-assignment/close`, payload);
+
+      message.success({
+        content: "Assessment submitted successfully!",
+        key: "submitKey",
+        duration: 2,
+      });
+      // Setelah submit sukses, refresh halaman agar status assignment terupdate
+      window.location.reload();
+    } catch (error) {
+      console.error("Error submitting assessment:", error);
+      message.error({
+        content: "Failed to submit assessment. Cek console log.",
+        key: "submitKey",
+        duration: 3,
+      });
+    } finally {
+      setLoadingSubmit(false);
+    }
   };
 
   /**
@@ -293,7 +347,7 @@ const PIDReportAssessmentPage: React.FC = () => {
       };
     }
 
-    // PERBAIKAN LOGIKA STATUS DI SINI
+    // LOGIKA STATUS: "true" = Open, "false" = Submitted & Closed
     if (assignment.status === "true") {
       return {
         status: "Open", // True = Open
@@ -484,8 +538,11 @@ const PIDReportAssessmentPage: React.FC = () => {
                 backgroundColor: isClosed ? redColor : orangeColor,
                 borderColor: isClosed ? redColor : orangeColor,
               }}
-              // Tombol disable jika status Closed, atau belum ada subjek
-              disabled={isClosed || subjects.length === 0}
+              // 💡 Tombol Submit
+              onClick={handleSubmitAssessment}
+              loading={loadingSubmit}
+              // Tombol disable jika status Closed, atau belum ada subjek, atau sedang loading submit
+              disabled={isClosed || subjects.length === 0 || loadingSubmit}
             >
               {isClosed ? "Assessment Submitted" : "Submit Assessment"}
             </Button>
@@ -518,6 +575,8 @@ const PIDReportAssessmentPage: React.FC = () => {
                 <SubjectCard
                   data={subjectData}
                   onInputReport={handleInputReportNavigation}
+                  // Meneruskan status isClosed ke SubjectCard
+                  isDisabled={isClosed}
                 />
               </Col>
             ))}

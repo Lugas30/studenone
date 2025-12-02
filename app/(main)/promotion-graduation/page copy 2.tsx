@@ -61,12 +61,6 @@ const PromotionGraduationPage: React.FC = () => {
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [activeAcademicYear, setActiveAcademicYear] =
     useState<AcademicYear | null>(null);
-
-  // BARU: State untuk Tahun Akademik Tujuan
-  const [targetAcademicYearId, setTargetAcademicYearId] = useState<
-    number | null
-  >(null);
-
   const [allStudents, setAllStudents] = useState<Student[]>([]);
 
   const [loading, setLoading] = useState(false);
@@ -103,14 +97,6 @@ const PromotionGraduationPage: React.FC = () => {
     { value: "graduated", label: "Graduated" },
   ];
 
-  // Options untuk Tahun Akademik Tujuan
-  const targetAcademicYearOptions = useMemo(() => {
-    return academicYears.map((year) => ({
-      value: year.id,
-      label: year.year,
-    }));
-  }, [academicYears]);
-
   // --- Fetch Data Hooks ---
 
   // 3a. Fetch Academic Years
@@ -122,8 +108,6 @@ const PromotionGraduationPage: React.FC = () => {
         setAcademicYears(years);
         const activeYear = years.find((y) => y.is_active);
         setActiveAcademicYear(activeYear || null);
-        // BARU: Set default target academic year (misal, yang aktif)
-        setTargetAcademicYearId(activeYear?.id || null);
       } catch (error) {
         toast.error("Gagal memuat Tahun Akademik.");
         console.error("Error fetching academic years:", error);
@@ -203,13 +187,6 @@ const PromotionGraduationPage: React.FC = () => {
     // 2. Filter siswa yang dipilih dan buat objek baru
     const studentsToPromote = allStudents
       .filter((student) => selectedStudentKeys.includes(student.key))
-      // Cek apakah siswa sudah ada di daftar promotedStudents sebelum menambahkan
-      .filter(
-        (student) =>
-          !promotedStudents.some(
-            (promoted) => promoted.id === student.id // Menggunakan ID untuk pengecekan unik
-          )
-      )
       .map((student) => ({
         ...student,
         // Override status_student
@@ -239,10 +216,9 @@ const PromotionGraduationPage: React.FC = () => {
       );
       return;
     }
-    // UBAH VALIDASI: Cek targetAcademicYearId
-    if (targetAcademicYearId === null) {
+    if (!activeAcademicYear) {
       toast.error(
-        "Tahun Akademik Tujuan harus dipilih. Tidak dapat melakukan promosi."
+        "Tahun Akademik aktif tidak ditemukan. Tidak dapat melakukan promosi."
       );
       return;
     }
@@ -253,12 +229,11 @@ const PromotionGraduationPage: React.FC = () => {
     }
 
     const studentIds = promotedStudents.map((s) => s.id);
-    // UBAH: Gunakan targetAcademicYearId yang dipilih
-    const academicYearId = targetAcademicYearId;
+    const targetAcademicYearId = activeAcademicYear.id;
 
     const postData = {
       student_id: studentIds,
-      academic_year_id: academicYearId,
+      academic_year_id: targetAcademicYearId,
       grade: newGrade, // newGrade dijamin PostGradeOption
     };
 
@@ -270,7 +245,7 @@ const PromotionGraduationPage: React.FC = () => {
         postData
       );
 
-      if (response.data.message.includes("Success")) {
+      if (response.data.message === "Promotion Success") {
         toast.success("Promosi/Kelulusan berhasil diajukan!");
       } else {
         toast.success(`Promosi berhasil diajukan: ${response.data.message}`);
@@ -303,8 +278,7 @@ const PromotionGraduationPage: React.FC = () => {
 
   const filteredStudents = useMemo(() => {
     const available = allStudents.filter(
-      // Filter siswa yang belum ada di daftar promosi berdasarkan ID
-      (student) => !promotedStudents.some((p) => p.id === student.id)
+      (student) => !promotedStudents.some((p) => p.nis === student.nis)
     );
     return available.filter(
       (student) =>
@@ -379,8 +353,7 @@ const PromotionGraduationPage: React.FC = () => {
       setSelectedStudentKeys(selectedKeys);
     },
     getCheckboxProps: (record: Student) => ({
-      // Disabled jika siswa sudah ada di daftar promotedStudents (gunakan ID)
-      disabled: promotedStudents.some((p) => p.id === record.id),
+      disabled: promotedStudents.some((p) => p.nis === record.nis),
     }),
   };
 
@@ -401,14 +374,7 @@ const PromotionGraduationPage: React.FC = () => {
             </Title>
           </Col>
           <Col>
-            {/* Tampilkan Tahun Akademik Aktif */}
-            <Text type="secondary" style={{ marginRight: 8, fontSize: "18px" }}>
-              Active Academic Year:{" "}
-            </Text>
-            <Title
-              level={2}
-              style={{ margin: 0, color: "#4096FF", display: "inline" }}
-            >
+            <Title level={2} style={{ margin: 0, color: "#4096FF" }}>
               {activeAcademicYear ? activeAcademicYear.year : "Memuat..."}
             </Title>
           </Col>
@@ -465,30 +431,21 @@ const PromotionGraduationPage: React.FC = () => {
                       ? currentGrade.toUpperCase().replace("_", " ")
                       : "N/A"}
                   </Text>
+                  <Text type="secondary">
+                    Student Total : {allStudents.length}
+                  </Text>
                 </Space>
               }
               variant="borderless"
             >
-              <Row
-                align="middle"
-                justify="space-between"
+              {/* Search Bar */}
+              <Input
+                placeholder="Search by NIS or Name"
+                prefix={<SearchOutlined />}
                 style={{ marginBottom: 16 }}
-              >
-                {/* Search Bar */}
-                <Col>
-                  <Input
-                    placeholder="Search by NIS or Name"
-                    prefix={<SearchOutlined />}
-                    value={searchStudent}
-                    onChange={(e) => setSearchStudent(e.target.value)}
-                  />
-                </Col>
-                <Col>
-                  <Text type="secondary">
-                    Student Total : {filteredStudents.length}
-                  </Text>
-                </Col>
-              </Row>
+                value={searchStudent}
+                onChange={(e) => setSearchStudent(e.target.value)}
+              />
 
               {/* Students Table */}
               <Table
@@ -512,12 +469,11 @@ const PromotionGraduationPage: React.FC = () => {
                     fontWeight: "bold",
                   }}
                   onClick={handleAddToNewGrade}
-                  // UBAH: Disabled jika selectedStudentKeys kosong, loading, newGrade null, atau targetAcademicYearId null
+                  // UBAH: Disabled jika selectedStudentKeys kosong atau newGrade null
                   disabled={
                     selectedStudentKeys.length === 0 ||
                     loading ||
-                    newGrade === null ||
-                    targetAcademicYearId === null
+                    newGrade === null
                   }
                 >
                   Add to New Grade
@@ -530,8 +486,8 @@ const PromotionGraduationPage: React.FC = () => {
           <Col span={12}>
             <Card
               title={
-                <Space size="middle">
-                  <Text strong>Target Grade:</Text>
+                <Space size="large">
+                  <Text strong>New Grade</Text>
                   <Select
                     // UBAH: value bisa null
                     value={newGrade}
@@ -541,42 +497,23 @@ const PromotionGraduationPage: React.FC = () => {
                     options={newGradeOptions}
                     style={{ minWidth: 100 }}
                     disabled={loading}
-                    placeholder="Select Grade" // Tambahkan placeholder
+                    placeholder="Select New Grade" // Tambahkan placeholder
                   />
-                  {/* BARU: Select Tahun Akademik Tujuan */}
-                  {/* <Text strong>Target Academic Year:</Text> */}
-                  <Select
-                    value={targetAcademicYearId}
-                    onChange={(value) => setTargetAcademicYearId(value)}
-                    options={targetAcademicYearOptions}
-                    style={{ minWidth: 150 }}
-                    disabled={loading || academicYears.length === 0}
-                    placeholder="Select Year"
-                  />
+                  <Text type="secondary">
+                    Student Total : {promotedStudents.length}
+                  </Text>
                 </Space>
               }
               variant="borderless"
             >
-              <Row
-                justify="space-between"
-                align="middle"
+              {/* Search Bar */}
+              <Input
+                placeholder="Search by NIS or Name"
+                prefix={<SearchOutlined />}
                 style={{ marginBottom: 16 }}
-              >
-                {/* Search Bar */}
-                <Col>
-                  <Input
-                    placeholder="Search by NIS or Name"
-                    prefix={<SearchOutlined />}
-                    value={searchPromoted}
-                    onChange={(e) => setSearchPromoted(e.target.value)}
-                  />
-                </Col>
-                <Col>
-                  <Text type="secondary">
-                    Student Total : {promotedStudents.length}
-                  </Text>
-                </Col>
-              </Row>
+                value={searchPromoted}
+                onChange={(e) => setSearchPromoted(e.target.value)}
+              />
 
               {/* Promoted Students Table */}
               <Table
@@ -620,11 +557,11 @@ const PromotionGraduationPage: React.FC = () => {
               }}
               onClick={handleSubmitPromotion}
               disabled={
-                // UBAH: Disabled jika promotedStudents kosong, loading, newGrade null, atau targetAcademicYearId null
+                // UBAH: Disabled jika promotedStudents kosong, loading, activeAcademicYear null, atau newGrade null
                 promotedStudents.length === 0 ||
                 loading ||
-                newGrade === null ||
-                targetAcademicYearId === null
+                !activeAcademicYear ||
+                !newGrade
               }
             >
               Submit Promotion

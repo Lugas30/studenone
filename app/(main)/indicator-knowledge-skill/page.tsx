@@ -293,11 +293,6 @@ const KnowledgeSkillPage: React.FC = () => {
             dataSource={data}
             pagination={false}
             size="middle"
-            locale={{
-              emptyText: (
-                <Empty description="Tidak ada data indikator untuk Grade ini" />
-              ),
-            }}
           />
         </Spin>
       </div>

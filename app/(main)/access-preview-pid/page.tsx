@@ -1,5 +1,5 @@
-"use client";
 // AccessPreviewPID.tsx
+"use client";
 
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
@@ -20,6 +20,7 @@ import type { ColumnsType } from "antd/es/table";
 import { SearchOutlined } from "@ant-design/icons";
 import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
+import { useRouter } from "next/navigation";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -33,31 +34,25 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 // 1. INTERFACE API & DATA
 // ===================================
 
-/**
- * Interface untuk struktur data laporan dari API
- */
 interface ApiReportRecord {
   pid_assessment_id: number | null;
   classroom_id: number;
   code: string;
-  grade: string; // Grade dari API adalah string
+  grade: string;
   class_name: string;
-  status: "true" | "false" | "-"; // Status dari API adalah string
-  publish: "true" | "false" | "-"; // Publish dari API adalah string
+  status: "true" | "false" | "-";
+  publish: "true" | "false" | "-";
 }
 
-/**
- * Interface untuk data yang akan digunakan di komponen (dipetakan dari API)
- */
 interface ReportRecord {
-  key: string; // Digunakan Ant Design Table
-  id: number | null; // pid_assessment_id
+  key: string;
+  id: number | null;
   code: string;
-  grade: number; // Diubah menjadi number
+  grade: number;
   className: string;
-  status: "Open" | "Closed" | "Not Assigned"; // Status untuk UI
-  isPublished: boolean | null; // Null jika belum di-assign
-  rawRecord: ApiReportRecord; // Simpan data mentah
+  status: "Open" | "Closed" | "Not Assigned";
+  isPublished: boolean | null;
+  rawRecord: ApiReportRecord;
 }
 
 // ===================================
@@ -65,6 +60,8 @@ interface ReportRecord {
 // ===================================
 
 const AccessPreviewPID: React.FC = () => {
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
   const [allData, setAllData] = useState<ReportRecord[]>([]);
   const [filteredData, setFilteredData] = useState<ReportRecord[]>([]);
@@ -89,7 +86,7 @@ const AccessPreviewPID: React.FC = () => {
         : null;
 
     return {
-      key: apiData.classroom_id.toString(), // Gunakan classroom_id sebagai key sementara
+      key: apiData.classroom_id.toString(),
       id: apiData.pid_assessment_id,
       code: apiData.code,
       grade: parseInt(apiData.grade) || 0,
@@ -124,12 +121,20 @@ const AccessPreviewPID: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Handlers: Pencarian ---
+  // --- Handlers: Navigasi Preview ---
+  const handlePreviewClick = useCallback(
+    (classroomId: number) => {
+      // Navigasi ke halaman detail preview dan kirim classroom_id sebagai query parameter
+      router.push(`/preview-detail-pid?classroom_id=${classroomId}`);
+    },
+    [router]
+  );
 
+  // --- Handlers: Pencarian ---
   const handleSearch = useCallback(
     (value: string, dataToFilter: ReportRecord[]) => {
       setSearchText(value);
-      setCurrentPage(1); // Reset halaman ke 1 setelah filter
+      setCurrentPage(1);
 
       if (!value) {
         setFilteredData(allData);
@@ -146,14 +151,12 @@ const AccessPreviewPID: React.FC = () => {
     [allData]
   );
 
-  // Trigger search on data change (initial load)
   useEffect(() => {
     handleSearch(searchText, allData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allData]);
 
   // --- API: Mengubah Status Akses (Open/Close) ---
-
   const handleAccessChange = useCallback(
     async (record: ReportRecord, open: boolean) => {
       if (record.id === null) {
@@ -172,7 +175,6 @@ const AccessPreviewPID: React.FC = () => {
         setLoading(true);
         await axios.post(endpoint, { pid_assessment_id: record.id });
 
-        // Update state lokal setelah sukses
         setAllData((prevData) =>
           prevData.map((item) =>
             item.key === record.key ? { ...item, status: newStatus } : item
@@ -190,7 +192,6 @@ const AccessPreviewPID: React.FC = () => {
   );
 
   // --- API: Mengubah Status Publish ---
-
   const handlePublishChange = useCallback(
     async (record: ReportRecord, published: boolean) => {
       if (record.id === null) {
@@ -208,7 +209,6 @@ const AccessPreviewPID: React.FC = () => {
           status_publish: published,
         });
 
-        // Update state lokal setelah sukses
         setAllData((prevData) =>
           prevData.map((item) =>
             item.key === record.key ? { ...item, isPublished: published } : item
@@ -226,18 +226,12 @@ const AccessPreviewPID: React.FC = () => {
   );
 
   // --- Logika Tampilan Data (Pagination) ---
-
-  /**
-   * Menghitung data yang akan ditampilkan berdasarkan halaman dan ukuran.
-   */
   const paginatedData = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    // Gunakan data hasil filter (filteredData) sebagai sumber
     return filteredData.slice(start, start + pageSize);
   }, [filteredData, currentPage, pageSize]);
 
   // --- Definisi Kolom Tabel Ant Design ---
-
   const columns: ColumnsType<ReportRecord> = [
     {
       title: "Code",
@@ -281,11 +275,9 @@ const AccessPreviewPID: React.FC = () => {
       title: "Actions",
       key: "actions",
       render: (_, record) => {
-        // Cek apakah data sudah di-assign (punya PID)
         const isAssigned = record.id !== null;
 
         if (!isAssigned) {
-          // Ganti Tag "Add Access" dengan null (kosong)
           return null;
         }
 
@@ -294,7 +286,7 @@ const AccessPreviewPID: React.FC = () => {
             {record.status === "Open" ? (
               <Button
                 type="primary"
-                danger // Warna merah untuk Close
+                danger
                 onClick={() => handleAccessChange(record, false)}
                 style={{ minWidth: 100 }}
                 loading={loading}
@@ -307,7 +299,7 @@ const AccessPreviewPID: React.FC = () => {
                 onClick={() => handleAccessChange(record, true)}
                 style={{
                   minWidth: 100,
-                  backgroundColor: "#52c41a", // Warna Hijau untuk Open Access
+                  backgroundColor: "#52c41a",
                   borderColor: "#52c41a",
                 }}
                 loading={loading}
@@ -316,7 +308,7 @@ const AccessPreviewPID: React.FC = () => {
               </Button>
             )}
             <Button
-              onClick={() => console.log("Preview:", record.code)}
+              onClick={() => handlePreviewClick(record.rawRecord.classroom_id)}
               type="primary"
               style={{ backgroundColor: "#1890ff", borderColor: "#1890ff" }}
             >
@@ -332,9 +324,9 @@ const AccessPreviewPID: React.FC = () => {
       key: "isPublished",
       render: (isPublished: boolean | null, record) => (
         <Switch
-          checked={isPublished ?? false} // Gunakan false jika null
+          checked={isPublished ?? false}
           onChange={(checked) => handlePublishChange(record, checked)}
-          disabled={record.id === null} // Nonaktifkan jika belum di-assign
+          disabled={record.id === null}
         />
       ),
     },
@@ -385,7 +377,7 @@ const AccessPreviewPID: React.FC = () => {
         <Table<ReportRecord>
           columns={columns}
           dataSource={paginatedData.length > 0 ? paginatedData : []}
-          pagination={false} // Menonaktifkan pagination default AntD
+          pagination={false}
           bordered={false}
           style={{ marginBottom: 16 }}
         />
@@ -401,7 +393,7 @@ const AccessPreviewPID: React.FC = () => {
                 style={{ width: 60 }}
                 onChange={(value) => {
                   setPageSize(value);
-                  setCurrentPage(1); // Reset ke halaman 1
+                  setCurrentPage(1);
                 }}
               >
                 <Option value={10}>10</Option>
@@ -419,7 +411,6 @@ const AccessPreviewPID: React.FC = () => {
                   if (!isNaN(num) && num >= 1 && num <= maxPage) {
                     setCurrentPage(num);
                   } else if (e.target.value === "") {
-                    // Izinkan input kosong sementara
                     setCurrentPage(1);
                   }
                 }}
