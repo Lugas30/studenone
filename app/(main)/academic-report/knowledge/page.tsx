@@ -1,9 +1,12 @@
 "use client";
 
-// pages/academic/knowledge.tsx (Next.js Pages Router)
-// atau app/academic/knowledge/page.tsx (Next.js App Router)
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import axios from "axios";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { useRouter } from "next/navigation";
 
-import React, { useState } from "react";
+// Ant Design Components and Icons
 import {
   Card,
   Button,
@@ -11,70 +14,117 @@ import {
   Select,
   Row,
   Col,
-  Layout,
   Typography,
-  theme,
+  Spin,
+  Divider,
 } from "antd";
+import { LoadingOutlined } from "@ant-design/icons";
 
-const { Header, Content } = Layout;
+// Destructure Ant Design Components
 const { Title, Text } = Typography;
 const { Search } = Input;
 const { Option } = Select;
 
-// --- 1. Data Dummy (Dibuat di dalam file yang sama) ---
-interface SubjectCard {
-  subject: string;
-  teacher: string;
+// --- 📚 Interfaces ---
+
+/** Struktur data Tahun Akademik dari API. */
+interface AcademicYear {
   id: number;
+  year: string;
+  is_ganjil: boolean;
+  is_genap: boolean;
+  is_active: boolean;
 }
 
-const knowledgeSubjects: SubjectCard[] = [
-  { id: 1, subject: "Pancasila", teacher: "Aulia Rahman" },
-  { id: 2, subject: "PAI", teacher: "Siti Aminah" },
-  { id: 3, subject: "Bahasa Indonesia", teacher: "Aulia Rahman" },
-  { id: 4, subject: "Matematika", teacher: "Fanny Ghaisani" },
-  { id: 5, subject: "Science", teacher: "Budi Santoso" },
-  { id: 6, subject: "ICT", teacher: "Aulia Rahman" },
-];
+/** Struktur data Kelas dari API. */
+interface Classroom {
+  id: number;
+  grade: string;
+  section: string;
+  class_name: string;
+  code: string;
+  academic_id: number;
+  academic_year: AcademicYear;
+}
 
-// --- 2. Sub-Komponen: Subject Report Card ---
-const SubjectReportCard: React.FC<{ data: SubjectCard }> = ({ data }) => {
-  const primaryColor = "#52c41a"; // Warna hijau dari gambar
+/** Struktur data Mata Pelajaran untuk Card. */
+interface SubjectCardData {
+  subject_teacher_id: number;
+  subject_id: number; // ID Mata Pelajaran (Digunakan untuk navigasi)
+  teacher_id: number;
+  classroom_id: number;
+  grade: string;
+  classroom_name: string;
+  subject_name: string;
+  teacher_name: string;
+}
 
-  // Handler untuk tombol (bisa diisi dengan logika navigasi/modal)
-  const handleViewIndicator = () => {
-    console.log(`View Indicator for: ${data.subject}`);
-    // Implementasi: router.push('/indicator-page/' + data.id)
-  };
+// --- ⚙️ Constants ---
 
-  const handleInputReport = () => {
-    console.log(`Input Report for: ${data.subject}`);
-    // Implementasi: router.push('/report-input/' + data.id)
-  };
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const PRIMARY_COLOR = "#52c41a"; // Ant Design Green
+const antIcon = <LoadingOutlined style={{ fontSize: 24 }} spin />;
+
+// --- Sub-Component: SubjectReportCard ---
+
+/**
+ * Komponen Card untuk menampilkan informasi Mata Pelajaran dan aksi navigasi.
+ */
+const SubjectReportCard: React.FC<{ data: SubjectCardData }> = ({ data }) => {
+  const router = useRouter();
+
+  const handleViewIndicator = useCallback(() => {
+    // Navigasi ke halaman indikator (jika rute sudah ada)
+    console.log(`View Indicator for: ${data.subject_name}`);
+    toast.info("Fitur View Indicator belum diimplementasikan.", {
+      position: "bottom-center",
+    });
+  }, [data.subject_name]);
+
+  const handleInputReport = useCallback(() => {
+    // Menggunakan subject_id (ID Mata Pelajaran) dan classroom_id untuk navigasi
+    const { subject_id: subjectId, classroom_id: classroomId } = data;
+
+    console.log(
+      `Navigating to Input Report with Subject ID: ${subjectId} and Classroom ID: ${classroomId}`
+    );
+
+    // Rute yang diharapkan: /academic-report/knowledge-input/[subjectId]/[classroomId]
+    router.push(`/academic-report/knowledge-input/${subjectId}/${classroomId}`);
+  }, [data, router]);
 
   return (
     <Card
       title={
         <Text strong style={{ fontSize: 16 }}>
-          {data.subject}
+          {data.subject_name}
         </Text>
       }
       variant="outlined"
-      style={{ marginBottom: 20 }}
+      style={{ marginBottom: 0 }}
+      hoverable
     >
-      <p style={{ margin: 0 }}>
+      <p style={{ margin: "0 0 5px 0" }}>
         <Text type="secondary" style={{ marginRight: 4 }}>
-          Teacher :
+          Teacher:
         </Text>
-        <Text>{data.teacher}</Text>
+        <Text>{data.teacher_name}</Text>
       </p>
+      {/* Subject ID ditampilkan untuk debugging/informasi */}
+      {/* <p style={{ margin: "0 0 10px 0" }}>
+        <Text type="secondary" style={{ marginRight: 4 }}>
+          Subject ID:
+        </Text>
+        <Text>{data.subject_id}</Text>
+      </p> */}
+
       <Row gutter={10} style={{ marginTop: 15 }}>
         <Col span={12}>
           <Button
             block
             style={{
-              borderColor: primaryColor,
-              color: primaryColor,
+              borderColor: PRIMARY_COLOR,
+              color: PRIMARY_COLOR,
             }}
             onClick={handleViewIndicator}
           >
@@ -86,8 +136,8 @@ const SubjectReportCard: React.FC<{ data: SubjectCard }> = ({ data }) => {
             type="primary"
             block
             style={{
-              backgroundColor: primaryColor,
-              borderColor: primaryColor,
+              backgroundColor: PRIMARY_COLOR,
+              borderColor: PRIMARY_COLOR,
             }}
             onClick={handleInputReport}
           >
@@ -99,21 +149,171 @@ const SubjectReportCard: React.FC<{ data: SubjectCard }> = ({ data }) => {
   );
 };
 
-// --- 3. Komponen Utama: Knowledge Page ---
-const KnowledgePage: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClassroom, setSelectedClassroom] = useState("P2B");
-  const primaryColor = "#52c41a"; // Warna hijau
+// --- Main Component: KnowledgePage ---
 
-  // Filter data berdasarkan input pencarian
-  const filteredSubjects = knowledgeSubjects.filter(
-    (subject) =>
-      subject.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      subject.teacher.toLowerCase().includes(searchTerm.toLowerCase())
+/**
+ * Halaman utama untuk penginputan nilai pengetahuan (Knowledge Report).
+ * Memungkinkan filter berdasarkan kelas dan pencarian mata pelajaran/guru.
+ */
+const KnowledgePage: React.FC = () => {
+  // Nama komponen tetap KnowledgePage
+  // State untuk Filter
+  const [searchTerm, setSearchTerm] = useState("");
+  const [tempSelectedClassId, setTempSelectedClassId] = useState<
+    number | undefined
+  >(undefined);
+  // ID kelas yang sudah DITERAPKAN filter
+  const [appliedClassId, setAppliedClassId] = useState<number | undefined>(
+    undefined
   );
 
+  // State untuk Data
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [subjects, setSubjects] = useState<SubjectCardData[]>([]);
+
+  // State untuk Loading
+  const [isLoading, setIsLoading] = useState(false); // Loading Subject Data
+  const [isClassroomLoading, setIsClassroomLoading] = useState(false); // Loading Classrooms
+
+  // --- Data Fetching Logic ---
+
+  /** Mengambil daftar semua kelas dari API. */
+  const fetchClassrooms = useCallback(async () => {
+    if (!API_BASE_URL) return;
+
+    setIsClassroomLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/classrooms`);
+      let data: Classroom[] = response.data.data;
+
+      // Urutkan berdasarkan kode kelas (misalnya: X A, X B, XI A)
+      data.sort((a, b) => a.code.localeCompare(b.code));
+
+      setClassrooms(data);
+
+      toast.success("Daftar kelas berhasil dimuat! 📚", {
+        position: "top-right",
+      });
+    } catch (error) {
+      console.error("Gagal memuat daftar kelas:", error);
+      toast.error("Gagal memuat daftar kelas! Silakan coba lagi. ❌", {
+        position: "top-right",
+      });
+    } finally {
+      setIsClassroomLoading(false);
+    }
+  }, []);
+
+  /** Mengambil data mata pelajaran berdasarkan Class ID yang dipilih. */
+  const fetchSubjects = useCallback(async (classId: number) => {
+    if (!API_BASE_URL) return;
+
+    setIsLoading(true);
+    setSubjects([]); // Clear previous subjects while loading
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/indicator-knowledge-skill?classroom_id=${classId}`
+      );
+      const data: SubjectCardData[] = response.data;
+      setSubjects(data);
+      toast.success(`Berhasil memuat ${data.length} mata pelajaran.`, {
+        position: "top-right",
+      });
+    } catch (error) {
+      console.error("Gagal memuat data mata pelajaran:", error);
+      toast.error("Gagal memuat data mata pelajaran! ❌", {
+        position: "top-right",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // --- Effects ---
+
+  // Effect untuk memuat daftar kelas saat inisialisasi
+  useEffect(() => {
+    fetchClassrooms();
+  }, [fetchClassrooms]);
+
+  // Effect untuk memuat mata pelajaran ketika appliedClassId berubah
+  useEffect(() => {
+    if (appliedClassId) {
+      fetchSubjects(appliedClassId);
+    }
+  }, [appliedClassId, fetchSubjects]);
+
+  // --- Handlers ---
+
+  const handleApplyFilter = () => {
+    if (tempSelectedClassId === undefined) {
+      toast.warn("Mohon pilih kelas terlebih dahulu. ⚠️", {
+        position: "top-center",
+      });
+      return;
+    }
+    // Hanya fetch data jika ID kelas yang dipilih BERBEDA dengan yang sudah diterapkan
+    if (tempSelectedClassId !== appliedClassId) {
+      setAppliedClassId(tempSelectedClassId);
+      toast.info("Filter diterapkan! Memuat data mata pelajaran...", {
+        position: "top-right",
+      });
+    } else {
+      toast.info(
+        "Kelas yang sama sudah diterapkan. Tidak perlu memuat ulang.",
+        {
+          position: "top-right",
+        }
+      );
+    }
+  };
+
+  const handleClassChange = (value: number) => {
+    setTempSelectedClassId(value);
+  };
+
+  // --- Memoized Values ---
+
+  /** Filter mata pelajaran berdasarkan searchTerm (Nama Mapel atau Guru). */
+  const filteredSubjects = useMemo(() => {
+    if (!searchTerm) return subjects;
+
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+
+    return subjects.filter(
+      (subject) =>
+        subject.subject_name.toLowerCase().includes(lowerCaseSearchTerm) ||
+        subject.teacher_name.toLowerCase().includes(lowerCaseSearchTerm)
+    );
+  }, [subjects, searchTerm]);
+
+  /** Mendapatkan data kelas yang sedang aktif/diterapkan. */
+  const currentClassroom = useMemo(() => {
+    return classrooms.find((c) => c.id === appliedClassId);
+  }, [classrooms, appliedClassId]);
+
+  /** Membuat teks Tahun Ajaran dan Semester. */
+  const academicYearText = useMemo(() => {
+    // Mencari tahun akademik yang aktif dari semua kelas yang dimuat
+    const activeClass = classrooms.find((c) => c.academic_year.is_active);
+    const academicYearData =
+      activeClass?.academic_year || classrooms[0]?.academic_year;
+
+    if (!academicYearData) return <Spin size="small" />;
+
+    let semester = "";
+    if (academicYearData.is_ganjil) {
+      semester = "(Ganjil)";
+    } else if (academicYearData.is_genap) {
+      semester = "(Genap)";
+    }
+
+    return `${academicYearData.year} ${semester}`;
+  }, [classrooms]);
+
+  // --- Render ---
+
   return (
-    // Menggunakan div sebagai wrapper untuk styling Ant Design
     <div
       style={{
         padding: "0 24px 24px",
@@ -121,78 +321,130 @@ const KnowledgePage: React.FC = () => {
         minHeight: "100vh",
       }}
     >
-      {/* Header Mirip Gambar */}
+      <ToastContainer />
+
+      {/* Header & Breadcrumb */}
       <div style={{ padding: "16px 0", borderBottom: "1px solid #f0f0f0" }}>
         <Row justify="space-between" align="middle">
           <Col>
-            {/* Breadcrumb Path: Home / Academic Report / Knowledge */}
             <Text type="secondary">Home / Academic Report / </Text>
             <Text strong>Knowledge</Text>
             <Title level={2} style={{ margin: "8px 0 0 0" }}>
-              Knowledge
+              Input Nilai Knowledge
             </Title>
           </Col>
           <Col>
             <Title level={3} style={{ margin: 0, fontWeight: "normal" }}>
-              2024-2025 (Ganjil)
+              {academicYearText}
             </Title>
           </Col>
         </Row>
       </div>
+      <Divider style={{ margin: "0 0 24px 0" }} />
 
-      {/* Filter Bar */}
-      <div style={{ padding: "24px 0 16px 0" }}>
+      {/* Filter Section */}
+      <div style={{ marginBottom: 24 }}>
         <Row gutter={16} align="middle">
           <Col flex="auto">
             <Search
-              placeholder="Search customer 100 records..."
+              placeholder="Search mata pelajaran atau guru..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ width: "50%" }}
+              style={{ width: "100%", maxWidth: "400px" }}
+              enterButton
             />
           </Col>
           <Col>
             <Select
-              defaultValue="P2B"
               style={{ width: 150 }}
-              onChange={setSelectedClassroom}
-              value={selectedClassroom}
+              placeholder="Pilih Kelas"
+              onChange={handleClassChange}
+              value={tempSelectedClassId}
+              loading={isClassroomLoading}
+              disabled={isClassroomLoading || isLoading} // Disabled jika sedang memuat kelas atau mata pelajaran
             >
-              <Option value="Classroom">Classroom</Option>
-              <Option value="P2A">P2A</Option>
-              <Option value="P2B">P2B</Option>
+              {classrooms.map((c) => (
+                <Option key={c.id} value={c.id}>
+                  {c.code}
+                </Option>
+              ))}
             </Select>
           </Col>
           <Col>
             <Button
               type="primary"
               style={{
-                backgroundColor: primaryColor,
-                borderColor: primaryColor,
+                backgroundColor: PRIMARY_COLOR,
+                borderColor: PRIMARY_COLOR,
               }}
+              onClick={handleApplyFilter}
+              loading={isLoading}
+              disabled={isClassroomLoading || tempSelectedClassId === undefined}
             >
               Apply Filter
             </Button>
           </Col>
         </Row>
       </div>
+      <Divider style={{ margin: "0 0 24px 0" }} />
 
-      {/* Class Indicator */}
-      <div style={{ padding: "16px 0 24px 0" }}>
-        <Title level={4} style={{ marginBottom: 15 }}>
-          Class : ABDULLAH BIN MUHAMMAD (P2B)
-        </Title>
-      </div>
+      {/* Class Indicator Title */}
+      <Title level={4} style={{ marginBottom: 24 }}>
+        Kelas Terpilih:{" "}
+        <Text strong type={currentClassroom ? undefined : "secondary"}>
+          {currentClassroom
+            ? `${currentClassroom.class_name} (${currentClassroom.code})`
+            : "Belum Ada Kelas Terpilih"}
+        </Text>
+      </Title>
 
-      {/* Subject Cards */}
-      <Row gutter={[24, 24]}>
-        {filteredSubjects.map((subject) => (
-          // Menggunakan 8/24 = 1/3 lebar untuk 3 kolom di layar medium ke atas
-          <Col key={subject.id} xs={24} sm={12} md={8} lg={8} xl={8}>
-            <SubjectReportCard data={subject} />
-          </Col>
-        ))}
-      </Row>
+      {/* Subject Cards Content */}
+      {appliedClassId === undefined ? (
+        <Card
+          style={{ textAlign: "center", padding: "50px", minHeight: "200px" }}
+        >
+          <Text type="secondary">
+            Pilih kelas dari **dropdown** dan klik **Apply Filter** untuk memuat
+            data mata pelajaran.
+          </Text>
+        </Card>
+      ) : isLoading ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "50px",
+            backgroundColor: "#f0f2f5",
+            borderRadius: "4px",
+          }}
+        >
+          <Spin indicator={antIcon} />
+          <Text style={{ display: "block", marginTop: 10 }}>
+            Memuat data mata pelajaran...
+          </Text>
+        </div>
+      ) : filteredSubjects.length > 0 ? (
+        <Row gutter={[24, 24]}>
+          {filteredSubjects.map((subject) => (
+            <Col
+              key={subject.subject_teacher_id}
+              xs={24} // Full width on extra small screens
+              sm={12} // Half width on small screens
+              md={8} // Third width on medium/large screens
+            >
+              <SubjectReportCard data={subject} />
+            </Col>
+          ))}
+        </Row>
+      ) : (
+        <Card
+          style={{ textAlign: "center", padding: "50px", minHeight: "200px" }}
+        >
+          <Text type="secondary">
+            Tidak ada mata pelajaran yang ditemukan untuk kelas ini, atau data
+            tidak cocok dengan kriteria pencarian (**{searchTerm}**).
+          </Text>
+        </Card>
+      )}
     </div>
   );
 };
