@@ -1,63 +1,73 @@
 "use client";
 
-// pages/academic/skills.tsx (Next.js Pages Router)
-// atau app/academic/skills/page.tsx (Next.js App Router)
+import React, { useState, useEffect, useCallback } from "react";
+import { Card, Button, Input, Select, Row, Col, Typography, Spin } from "antd";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import axios from "axios";
+import { useRouter } from "next/navigation";
 
-import React, { useState } from "react";
-import {
-  Card,
-  Button,
-  Input,
-  Select,
-  Row,
-  Col,
-  Layout,
-  Typography,
-  theme,
-} from "antd";
-
-const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 const { Search } = Input;
 const { Option } = Select;
 
-// --- 1. Data Dummy (Dibuat di dalam file yang sama) ---
-interface SubjectCard {
-  subject: string;
-  teacher: string;
+// --- 1. Konfigurasi API URL ---
+const BASE_API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "https://so-api.queensland.id/api";
+
+const axiosInstance = axios.create({
+  baseURL: BASE_API_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// --- 2. Definisi Tipe Data dari API ---
+interface Classroom {
   id: number;
+  code: string;
+  class_name: string;
+  grade: string;
+  section: string;
 }
 
-// Mengubah nama variabel data dummy dari knowledgeSubjects menjadi skillsSubjects
-const skillsSubjects: SubjectCard[] = [
-  { id: 1, subject: "Pancasila", teacher: "Aulia Rahman" },
-  { id: 2, subject: "PAI", teacher: "Siti Aminah" },
-  { id: 3, subject: "Bahasa Indonesia", teacher: "Aulia Rahman" },
-  { id: 4, subject: "Matematika", teacher: "Fanny Ghaisani" },
-  { id: 5, subject: "Science", teacher: "Budi Santoso" },
-  { id: 6, subject: "ICT", teacher: "Aulia Rahman" },
-];
+interface SkillSubject {
+  subject_teacher_id: number;
+  subject_id: number;
+  teacher_id: number;
+  classroom_id: number;
+  grade: string;
+  classroom_name: string;
+  subject_name: string;
+  teacher_name: string;
+  indicators: any[];
+}
 
-// --- 2. Sub-Komponen: Subject Report Card ---
-const SubjectReportCard: React.FC<{ data: SubjectCard }> = ({ data }) => {
-  const primaryColor = "#52c41a"; // Warna hijau dari gambar
+// --- 3. Sub-Komponen: Subject Report Card ---
+const SubjectReportCard: React.FC<{ data: SkillSubject; router: any }> = ({
+  data,
+  router,
+}) => {
+  const primaryColor = "#52c41a";
 
-  // Handler untuk tombol (bisa diisi dengan logika navigasi/modal)
   const handleViewIndicator = () => {
-    console.log(`View Indicator for: ${data.subject}`);
-    // Implementasi: router.push('/indicator-page/' + data.id)
+    console.log(`View Indicator for: ${data.subject_name}`);
+    toast.info(`Melihat Indikator untuk: ${data.subject_name}`);
   };
 
   const handleInputReport = () => {
-    console.log(`Input Report for: ${data.subject}`);
-    // Implementasi: router.push('/report-input/' + data.id)
+    const subjectId = data.subject_id;
+    const classroomId = data.classroom_id;
+
+    router.push(`/academic-report/skills-input/${subjectId}/${classroomId}`);
+    toast.success(`Mengarahkan ke Input Nilai: ${data.subject_name}`);
   };
 
   return (
     <Card
       title={
         <Text strong style={{ fontSize: 16 }}>
-          {data.subject}
+          {data.subject_name}
         </Text>
       }
       variant="outlined"
@@ -67,7 +77,7 @@ const SubjectReportCard: React.FC<{ data: SubjectCard }> = ({ data }) => {
         <Text type="secondary" style={{ marginRight: 4 }}>
           Teacher :
         </Text>
-        <Text>{data.teacher}</Text>
+        <Text>{data.teacher_name}</Text>
       </p>
       <Row gutter={10} style={{ marginTop: 15 }}>
         <Col span={12}>
@@ -100,21 +110,127 @@ const SubjectReportCard: React.FC<{ data: SubjectCard }> = ({ data }) => {
   );
 };
 
-// --- 3. Komponen Utama: Skills Page (Mengubah nama komponen) ---
+// --- 4. Komponen Utama: Skills Page ---
 const SkillsPage: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClassroom, setSelectedClassroom] = useState("P2B");
-  const primaryColor = "#52c41a"; // Warna hijau
+  const router = useRouter();
+  const primaryColor = "#52c41a";
 
-  // Filter data berdasarkan input pencarian, menggunakan data skillsSubjects
-  const filteredSubjects = skillsSubjects.filter(
-    (subject) =>
-      subject.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      subject.teacher.toLowerCase().includes(searchTerm.toLowerCase())
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [skillsSubjects, setSkillsSubjects] = useState<SkillSubject[]>([]);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedClassCode, setSelectedClassCode] = useState<string | null>(
+    null
+  );
+  const [pendingClassCode, setPendingClassCode] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [currentAcademicYear, setCurrentAcademicYear] = useState<string | null>(
+    null
   );
 
+  const [loadingClassrooms, setLoadingClassrooms] = useState(true);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+
+  const fetchClassrooms = useCallback(async () => {
+    setLoadingClassrooms(true);
+    try {
+      const response = await axiosInstance.get("/classrooms");
+      const apiData = response.data.data as Classroom[];
+
+      const sortedData = apiData.sort((a, b) => a.code.localeCompare(b.code));
+
+      setClassrooms(sortedData);
+      setCurrentAcademicYear(response.data.academicYear);
+
+      toast.success("Data Kelas berhasil dimuat!");
+    } catch (error) {
+      console.error("Error fetching classrooms:", error);
+      toast.error(
+        `Gagal memuat data kelas dari API. URL: ${BASE_API_URL}/classrooms`
+      );
+      setClassrooms([]);
+      setCurrentAcademicYear(null);
+    } finally {
+      setLoadingClassrooms(false);
+    }
+  }, []);
+
+  const fetchSkillsSubjects = useCallback(
+    async (classId: number, classCode: string) => {
+      setLoadingSubjects(true);
+      setSkillsSubjects([]);
+
+      try {
+        const response = await axiosInstance.get(
+          `/indicator-skill?classroom_id=${classId}`
+        );
+
+        const apiData = response.data as SkillSubject[];
+        setSkillsSubjects(apiData);
+        setSelectedClassCode(classCode);
+
+        toast.success(`Data Subjek untuk kelas ${classCode} berhasil dimuat!`);
+      } catch (error) {
+        console.error(
+          `Error fetching subjects for class ID ${classId}:`,
+          error
+        );
+        toast.error(`Gagal memuat data subjek untuk kelas ${classCode}.`);
+        setSkillsSubjects([]);
+      } finally {
+        setLoadingSubjects(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    fetchClassrooms();
+  }, [fetchClassrooms]);
+
+  const handleClassroomChange = (code: string | null) => {
+    if (!code || code === "") {
+      setPendingClassCode(null);
+      setSelectedClassId(null);
+      return;
+    }
+    const selected = classrooms.find((c) => c.code === code);
+    if (selected) {
+      setPendingClassCode(code);
+      setSelectedClassId(selected.id);
+    }
+  };
+
+  const handleApplyFilter = () => {
+    setSearchTerm("");
+    if (selectedClassId && pendingClassCode) {
+      fetchSkillsSubjects(selectedClassId, pendingClassCode);
+      toast.info(`Filter Kelas diterapkan: ${pendingClassCode}`);
+    } else {
+      setSkillsSubjects([]);
+      setSelectedClassCode(null);
+      toast.warn(
+        "Mohon pilih kelas terlebih dahulu sebelum menerapkan filter."
+      );
+    }
+  };
+
+  const filteredSubjects = skillsSubjects.filter(
+    (subject) =>
+      subject.subject_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      subject.teacher_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const currentClassDetails = classrooms.find(
+    (c) => c.code === selectedClassCode
+  );
+  const classDisplayName = currentClassDetails
+    ? `${currentClassDetails.class_name} (${currentClassDetails.code})`
+    : selectedClassCode
+    ? `${selectedClassCode}`
+    : "Pilih Kelas";
+
   return (
-    // Menggunakan div sebagai wrapper untuk styling Ant Design
     <div
       style={{
         padding: "0 24px 24px",
@@ -122,11 +238,11 @@ const SkillsPage: React.FC = () => {
         minHeight: "100vh",
       }}
     >
-      {/* Header Mirip Gambar */}
+      <ToastContainer position="top-right" autoClose={5000} />
+
       <div style={{ padding: "16px 0", borderBottom: "1px solid #f0f0f0" }}>
         <Row justify="space-between" align="middle">
           <Col>
-            {/* Breadcrumb Path: Home / Academic Report / Skills */}
             <Text type="secondary">Home / Academic Report / </Text>
             <Text strong>Skills</Text>
             <Title level={2} style={{ margin: "8px 0 0 0" }}>
@@ -135,34 +251,39 @@ const SkillsPage: React.FC = () => {
           </Col>
           <Col>
             <Title level={3} style={{ margin: 0, fontWeight: "normal" }}>
-              2024-2025 (Ganjil)
+              {currentAcademicYear || "Tahun Akademik"}
             </Title>
           </Col>
         </Row>
       </div>
 
-      {/* Filter Bar */}
+      {/* --- Filter Bar --- */}
       <div style={{ padding: "24px 0 16px 0" }}>
         <Row gutter={16} align="middle">
           <Col flex="auto">
             <Search
-              placeholder="Search customer 100 records..."
+              placeholder="Search subject or teacher..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ width: "50%" }}
             />
           </Col>
           <Col>
-            <Select
-              defaultValue="P2B"
-              style={{ width: 150 }}
-              onChange={setSelectedClassroom}
-              value={selectedClassroom}
-            >
-              <Option value="Classroom">Classroom</Option>
-              <Option value="P2A">P2A</Option>
-              <Option value="P2B">P2B</Option>
-            </Select>
+            <Spin spinning={loadingClassrooms}>
+              <Select
+                placeholder="Select Class"
+                style={{ width: 150 }}
+                onChange={handleClassroomChange}
+                value={pendingClassCode}
+                disabled={loadingClassrooms || classrooms.length === 0}
+              >
+                {classrooms.map((c) => (
+                  <Option key={c.id} value={c.code}>
+                    {c.code}
+                  </Option>
+                ))}
+              </Select>
+            </Spin>
           </Col>
           <Col>
             <Button
@@ -171,6 +292,8 @@ const SkillsPage: React.FC = () => {
                 backgroundColor: primaryColor,
                 borderColor: primaryColor,
               }}
+              onClick={handleApplyFilter}
+              disabled={loadingSubjects || !pendingClassCode}
             >
               Apply Filter
             </Button>
@@ -181,22 +304,51 @@ const SkillsPage: React.FC = () => {
       {/* Class Indicator */}
       <div style={{ padding: "16px 0 24px 0" }}>
         <Title level={4} style={{ marginBottom: 15 }}>
-          Class : ABDULLAH BIN MUHAMMAD (P2B)
+          Class : {classDisplayName}
         </Title>
       </div>
 
-      {/* Subject Cards */}
-      <Row gutter={[24, 24]}>
-        {filteredSubjects.map((subject) => (
-          // Menggunakan 8/24 = 1/3 lebar untuk 3 kolom di layar medium ke atas
-          <Col key={subject.id} xs={24} sm={12} md={8} lg={8} xl={8}>
-            <SubjectReportCard data={subject} />
-          </Col>
-        ))}
-      </Row>
+      {/* --- Subject Cards (Loading State & Hasil) --- */}
+      <Spin spinning={loadingSubjects}>
+        {selectedClassCode === null ? (
+          <div
+            style={{ textAlign: "center", padding: "50px 0", color: "#888" }}
+          >
+            <Text type="secondary">
+              Silakan **pilih kelas** dan tekan **Apply Filter** untuk memuat
+              data.
+            </Text>
+          </div>
+        ) : selectedClassCode &&
+          skillsSubjects.length === 0 &&
+          !loadingSubjects ? (
+          <div
+            style={{ textAlign: "center", padding: "50px 0", color: "#888" }}
+          >
+            <Text type="secondary">
+              Tidak ada data subjek keterampilan yang tersedia untuk kelas{" "}
+              {selectedClassCode}.
+            </Text>
+          </div>
+        ) : (
+          <Row gutter={[24, 24]}>
+            {filteredSubjects.map((subject) => (
+              <Col
+                key={subject.subject_teacher_id}
+                xs={24}
+                sm={12}
+                md={8}
+                lg={8}
+                xl={8}
+              >
+                <SubjectReportCard data={subject} router={router} />
+              </Col>
+            ))}
+          </Row>
+        )}
+      </Spin>
     </div>
   );
 };
 
-// Mengubah export default dari KnowledgePage menjadi SkillsPage
 export default SkillsPage;
