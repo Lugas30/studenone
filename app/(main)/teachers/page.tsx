@@ -28,6 +28,7 @@ import {
   UploadOutlined as UploadIcon,
   UserAddOutlined,
   DownloadOutlined,
+  EyeOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import moment from "moment";
@@ -40,7 +41,6 @@ const { Option } = Select;
 // 1. DATA TYPES AND API CONFIG
 // ===================================
 
-// Tipe data untuk objek Guru (sesuai API)
 interface Teacher {
   id: number;
   key: Key;
@@ -52,14 +52,15 @@ interface Teacher {
   gender: "male" | "female";
   phone: string;
   email: string;
+  // 🔑 Pastikan API endpoint GET mengembalikan field 'password' jika ini ingin ditampilkan
   password?: string;
   is_active: boolean;
   signature: string | null;
   note: string | null;
-  // academic_year dihilangkan di sini
+  created_at: string;
+  updated_at: string;
 }
 
-// Tipe data untuk form
 interface TeacherFormValues {
   id?: number;
   academic_year_id: number;
@@ -73,27 +74,126 @@ interface TeacherFormValues {
   password?: string;
   is_active: boolean;
   note?: string | null;
-  signature?: any; // Menggunakan any untuk menampung format Upload AntD (fileList)
+  signature?: any;
 }
 
-// 💡 Interface baru untuk respons API
 interface TeacherApiResponse {
   academicYear: string;
   data: Teacher[];
   total: number;
 }
 
-// Ambil URL dari .env
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 const BASE_URL = `${API_URL}/teachers`;
+const IMAGE_BASE_URL =
+  process.env.NEXT_PUBLIC_API_IMAGE_URL ||
+  "https://so-api.queensland.id/storage/";
 
 // ===================================
-// 2. COLUMN DEFINITION
+// 2. DETAIL VIEW MODAL COMPONENT (PASSWORD DITAMPILKAN LANGSUNG) ⚠️
+// ===================================
+
+interface DetailModalProps {
+  isVisible: boolean;
+  onClose: () => void;
+  teacher: Teacher | null;
+}
+
+const TeacherDetailModal: React.FC<DetailModalProps> = ({
+  isVisible,
+  onClose,
+  teacher,
+}) => {
+  if (!teacher) return null;
+
+  const data = [
+    { label: "NIY / NIP", value: teacher.nip },
+    { label: "NUPTK", value: teacher.nuptk || "-" },
+    { label: "Full Name", value: teacher.name },
+    {
+      label: "Gender",
+      value: teacher.gender === "male" ? "Laki-laki" : "Perempuan",
+    },
+    { label: "Phone", value: teacher.phone },
+    { label: "Email", value: teacher.email },
+    // ⚠️ BARIS INI MENAMPILKAN NILAI PASSWORD SECARA LANGSUNG
+    { label: "Password", value: teacher.password || "-" },
+    {
+      label: "Join Date",
+      value: moment(teacher.join_date).format("DD MMMM YYYY"),
+    },
+    {
+      label: "Status",
+      value: teacher.is_active ? "Active" : "Non-Active",
+      color: teacher.is_active ? "green" : "red",
+    },
+    { label: "Note", value: teacher.note || "-" },
+    {
+      label: "Created At",
+      value: moment(teacher.created_at).format("DD/MM/YYYY HH:mm"),
+    },
+    {
+      label: "Updated At",
+      value: moment(teacher.updated_at).format("DD/MM/YYYY HH:mm"),
+    },
+  ];
+
+  return (
+    <Modal
+      title={`Detail Teacher: ${teacher.name}`}
+      open={isVisible}
+      onCancel={onClose}
+      footer={
+        <Button onClick={onClose} type="primary">
+          Close
+        </Button>
+      }
+      width={600}
+    >
+      <Row gutter={[16, 16]}>
+        {data.map((item) => (
+          <Col span={12} key={item.label}>
+            <Text strong>{item.label}:</Text>
+            <br />
+            <Text style={{ color: item.color }}>{item.value}</Text>
+          </Col>
+        ))}
+        {teacher.signature && (
+          <Col span={24}>
+            <Text strong>Signature:</Text>
+            <div
+              style={{
+                marginTop: 8,
+                textAlign: "center",
+                border: "1px solid #d9d9d9",
+                padding: "10px",
+              }}
+            >
+              <img
+                src={`${IMAGE_BASE_URL}${teacher.signature}`}
+                alt="Teacher Signature"
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "150px",
+                  objectFit: "contain",
+                }}
+              />
+            </div>
+          </Col>
+        )}
+      </Row>
+    </Modal>
+  );
+};
+
+// ===================================
+// 3. COLUMN DEFINITION
 // ===================================
 
 const getColumns = (
   handleEdit: (record: Teacher) => void,
-  handleDelete: (id: number) => void
+  handleDelete: (id: number) => void,
+  handleView: (record: Teacher) => void
 ): ColumnsType<Teacher> => [
   {
     title: "NIY / NIP",
@@ -147,10 +247,18 @@ const getColumns = (
     render: (_, record) => (
       <Space size="middle">
         <Button
+          icon={<EyeOutlined />}
+          onClick={() => handleView(record)}
+          type="text"
+          style={{ color: "#1890ff" }}
+          title="View Detail"
+        />
+        <Button
           icon={<EditOutlined />}
           onClick={() => handleEdit(record)}
           type="text"
           style={{ color: "#faad14" }}
+          title="Edit Data"
         />
         <Popconfirm
           title="Delete Teacher"
@@ -159,7 +267,12 @@ const getColumns = (
           okText="Yes, Delete"
           cancelText="Cancel"
         >
-          <Button icon={<DeleteOutlined />} type="text" danger />
+          <Button
+            icon={<DeleteOutlined />}
+            type="text"
+            danger
+            title="Delete Data"
+          />
         </Popconfirm>
       </Space>
     ),
@@ -167,7 +280,7 @@ const getColumns = (
 ];
 
 // ===================================
-// 3. FORM MODAL COMPONENT
+// 4. FORM MODAL COMPONENT
 // ===================================
 
 interface FormModalProps {
@@ -197,18 +310,15 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
   useEffect(() => {
     if (isVisible) {
       if (initialValues) {
-        // Edit mode: set values
         form.setFieldsValue({
           ...initialValues,
           join_date: moment(initialValues.join_date),
           nuptk: initialValues.nuptk || undefined,
           note: initialValues.note || undefined,
-          // Kosongkan password dan signature saat edit, agar user upload jika ingin ganti
-          password: undefined,
+          password: undefined, // Selalu kosongkan password saat edit untuk keamanan
           signature: undefined,
         });
       } else {
-        // Add mode: reset and set defaults
         form.resetFields();
         form.setFieldsValue({
           academic_year_id: 1,
@@ -239,7 +349,7 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
       open={isVisible}
       onCancel={onClose}
       footer={null}
-      destroyOnClose={true} // Gunakan destroyOnClose saat modal ditutup
+      destroyOnClose={true}
       width={700}
     >
       <Form
@@ -257,7 +367,6 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
         </Form.Item>
 
         <Row gutter={24}>
-          {/* NIY / NIP & NUPTK */}
           <Col span={12}>
             <Form.Item
               name="nip"
@@ -272,8 +381,6 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
               <Input placeholder="-" />
             </Form.Item>
           </Col>
-
-          {/* Full Name & Join Date */}
           <Col span={12}>
             <Form.Item
               name="name"
@@ -296,8 +403,6 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
               />
             </Form.Item>
           </Col>
-
-          {/* Gender & Phone */}
           <Col span={12}>
             <Form.Item
               name="gender"
@@ -321,8 +426,6 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
               <Input placeholder="087654562622" />
             </Form.Item>
           </Col>
-
-          {/* Email Address & Password access */}
           <Col span={12}>
             <Form.Item
               name="email"
@@ -335,6 +438,8 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
               <Input placeholder="budisantoso@gmail.com" />
             </Form.Item>
           </Col>
+
+          {/* FIELD PASSWORD DI FORM MODAL */}
           <Col span={12}>
             <Form.Item
               name="password"
@@ -354,7 +459,6 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
             </Form.Item>
           </Col>
 
-          {/* Status & Note */}
           <Col span={12}>
             <Form.Item
               name="is_active"
@@ -394,6 +498,31 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
                 <p className="ant-upload-hint">Drag and drop files here</p>
               </Upload.Dragger>
             </Form.Item>
+
+            {/* PRATINJAU GAMBAR TANDA TANGAN YANG SUDAH ADA */}
+            {isEditing && initialValues?.signature && (
+              <div style={{ marginBottom: 15 }}>
+                <Text strong>Existing Signature:</Text>
+                <div
+                  style={{
+                    marginTop: 8,
+                    textAlign: "center",
+                    border: "1px dashed #d9d9d9",
+                    padding: "10px",
+                  }}
+                >
+                  <img
+                    src={`${IMAGE_BASE_URL}${initialValues.signature}`}
+                    alt="Existing Signature"
+                    style={{
+                      maxWidth: "100%",
+                      maxHeight: "100px",
+                      objectFit: "contain",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </Col>
 
           {/* Tombol Aksi */}
@@ -420,28 +549,26 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
 };
 
 // ===================================
-// 4. MAIN COMPONENT
+// 5. MAIN COMPONENT
 // ===================================
 
 const TeachersPage: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
-  // 💡 PERUBAHAN: State untuk tahun akademik
   const [currentAcademicYear, setCurrentAcademicYear] = useState("Loading...");
 
   // Fetch Data Guru
   const fetchTeachers = useCallback(async (page = 1, limit = 10) => {
     setLoading(true);
     try {
-      // 💡 PERUBAHAN: Mendefinisikan tipe respons sebagai TeacherApiResponse
-      // Asumsi: Endpoint mendukung paginasi melalui query params
       const response = await axios.get<TeacherApiResponse>(
         `${BASE_URL}?page=${page}&limit=${limit}`
       );
@@ -453,10 +580,8 @@ const TeachersPage: React.FC = () => {
         key: teacher.id.toString(),
       }));
 
-      // 💡 PERUBAHAN: Mengambil tahun akademik dari properti tingkat atas
       setCurrentAcademicYear(academicYear || "N/A");
-
-      setTotalRecords(total); // Menggunakan total dari API
+      setTotalRecords(total);
       setTeachers(mappedData);
       setCurrentPage(page);
       setPageSize(limit);
@@ -482,14 +607,24 @@ const TeachersPage: React.FC = () => {
     fetchTeachers(page, size);
   };
 
+  const handleView = (teacher: Teacher) => {
+    setCurrentTeacher(teacher);
+    setIsDetailModalOpen(true);
+  };
+
   const handleEdit = (teacher: Teacher) => {
     setIsEditing(true);
     setCurrentTeacher(teacher);
-    setIsModalOpen(true);
+    setIsFormModalOpen(true);
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
+  const handleCloseFormModal = () => {
+    setIsFormModalOpen(false);
+    setCurrentTeacher(null);
+  };
+
+  const handleCloseDetailModal = () => {
+    setIsDetailModalOpen(false);
     setCurrentTeacher(null);
   };
 
@@ -550,7 +685,7 @@ const TeachersPage: React.FC = () => {
           }
         );
       }
-      setIsModalOpen(false);
+      setIsFormModalOpen(false);
       fetchTeachers(currentPage, pageSize);
     } catch (error) {
       const err = error as AxiosError<{ message?: string; errors?: any }>;
@@ -562,10 +697,10 @@ const TeachersPage: React.FC = () => {
     }
   };
 
-  // Handler Delete (Simulasi)
+  // Handler Delete (Simulasi/Ganti dengan aksi API DELETE)
   const handleDelete = async (id: number) => {
     try {
-      // Simulasi
+      // Ganti dengan await axios.delete(`${BASE_URL}/${id}`);
       await new Promise((resolve) => setTimeout(resolve, 500));
       toast.success(`Teacher ID ${id} deleted successfully (Simulation)! 🗑️`, {
         position: "top-right",
@@ -579,12 +714,12 @@ const TeachersPage: React.FC = () => {
     }
   };
 
-  const columns = getColumns(handleEdit, handleDelete);
+  const columns = getColumns(handleEdit, handleDelete, handleView);
 
   return (
     <>
       <ToastContainer />
-      <div style={{ background: "#fff" }}>
+      <div style={{ background: "#fff", padding: "20px", borderRadius: "8px" }}>
         {/* Breadcrumb */}
         <div style={{ marginBottom: "10px" }}>
           <Breadcrumb items={[{ title: "Home" }, { title: "Teachers" }]} />
@@ -597,13 +732,15 @@ const TeachersPage: React.FC = () => {
             justifyContent: "space-between",
             alignItems: "center",
             marginBottom: "20px",
+            borderBottom: "1px solid #f0f0f0",
+            paddingBottom: "10px",
           }}
         >
-          <Title level={1} style={{ margin: 0 }}>
-            Teachers
+          <Title level={2} style={{ margin: 0 }}>
+            <UserAddOutlined /> Teacher Management
           </Title>
-          <Title level={3} style={{ margin: 0 }}>
-            {currentAcademicYear} {/* Menampilkan Tahun Akademik Statis */}
+          <Title level={3} style={{ margin: 0, color: "#1890ff" }}>
+            Year: **{currentAcademicYear}**
           </Title>
         </div>
 
@@ -618,7 +755,7 @@ const TeachersPage: React.FC = () => {
         >
           <Input
             prefix={<SearchOutlined style={{ marginRight: 8 }} />}
-            placeholder="Search teacher..."
+            placeholder="Search teacher by name or NIP..."
             style={{ maxWidth: 300 }}
           />
           <Space>
@@ -636,7 +773,7 @@ const TeachersPage: React.FC = () => {
               onClick={() => {
                 setIsEditing(false);
                 setCurrentTeacher(null);
-                setIsModalOpen(true);
+                setIsFormModalOpen(true);
               }}
             >
               Add Teacher
@@ -644,6 +781,7 @@ const TeachersPage: React.FC = () => {
             <Button
               icon={<DownloadOutlined />}
               onClick={() => toast.info("Download Function (Simulation) 📥")}
+              title="Download Data"
             />
           </Space>
         </div>
@@ -656,6 +794,7 @@ const TeachersPage: React.FC = () => {
           pagination={false}
           rowKey="key"
           bordered
+          size="middle"
         />
 
         {/* Custom Pagination di Bawah Tabel */}
@@ -687,17 +826,27 @@ const TeachersPage: React.FC = () => {
             total={totalRecords}
             onChange={handlePageChange}
             showSizeChanger={false}
+            showTotal={(total, range) =>
+              `${range[0]}-${range[1]} of ${total} items`
+            }
           />
         </div>
       </div>
 
       {/* Modal Form Tambah/Edit Guru */}
       <TeacherFormModal
-        isVisible={isModalOpen}
-        onClose={handleCloseModal}
+        isVisible={isFormModalOpen}
+        onClose={handleCloseFormModal}
         onFinish={handleFormSubmit}
         initialValues={currentTeacher}
         isEditing={isEditing}
+      />
+
+      {/* Modal View Detail Guru */}
+      <TeacherDetailModal
+        isVisible={isDetailModalOpen}
+        onClose={handleCloseDetailModal}
+        teacher={currentTeacher}
       />
     </>
   );

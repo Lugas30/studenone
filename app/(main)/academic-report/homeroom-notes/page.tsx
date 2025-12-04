@@ -1,140 +1,336 @@
 "use client";
 // src/pages/HomeroomNotesPage.tsx
 
-import React, { useState, Key } from "react";
+import React, { useState, useEffect, Key, useCallback } from "react";
 import {
   Layout,
   Typography,
-  Input, // Menggunakan Input untuk TextArea
+  Input,
   Select,
   Button,
   Table,
   Divider,
-  message,
-  // InputNumber tidak lagi digunakan
+  Spin,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import axios from "axios";
+import { toast, ToastContainer } from "react-toastify"; // Import Toastify
 
+// Destructuring komponen yang dibutuhkan
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
-const { Search, TextArea } = Input; // Destructure TextArea
+const { Search, TextArea } = Input;
 const { Option } = Select;
 
+// Ambil URL API dari environment variable
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
 // ===========================================
-// 1. DATA DUMMY & TIPE DATA (Diperbarui untuk Homeroom Notes - Teks)
+// 1. TIPE DATA API
+// (Tidak ada perubahan pada bagian ini)
 // ===========================================
 
-// Tipe data untuk Homeroom Notes - menggunakan string untuk catatan
-interface HomeroomNotesData {
-  key: Key;
-  fullName: string;
-  note: string; // Tipe diubah dari number menjadi string
+interface AcademicYear {
+  id: number;
+  year: string;
+  is_ganjil: boolean;
+  is_genap: boolean;
+  is_active: boolean;
 }
 
-// Data Konstan
-const classInfo = {
-  academicYear: "2024-2025 (Ganjil)",
-  className: "ABDULLAH BIN MUHAMMAD (P2B)",
-};
+interface Classroom {
+  id: number;
+  grade: string;
+  section: string;
+  class_name: string;
+  code: string;
+  academic_id: number;
+}
 
-const students = [
-  "Aathirah Dhanesa Prayuda",
-  "Abyan Mufid Shaqille",
-  "Ahza Danendra Abdillah",
-  "Akhtar Khairazky Subiyanto",
-  "Aldebaran Kenan Arrazka",
-  "Byanca Alesha El Ilbar",
-  "Cherilyn Nafeeza Ardiansyah",
-  "Falisha Tanzeela Rahman",
-  "Shane Marshall Yusuf",
-];
+interface Student {
+  id: number; // Student ID
+  fullname: string;
+}
 
-// Data awal untuk Homeroom Notes
-const initialHomeroomNotesData: HomeroomNotesData[] = students.map(
-  (name, index) => {
-    // Contoh data awal (Abyan memiliki catatan teks)
-    let note = "";
+interface StudentClassroom {
+  id: number; // student_classroom ID (key untuk table row)
+  student_id: number; // ID Siswa
+  classroom_id: number; // ID Kelas
+  semester: string;
+  student: Student;
+}
 
-    if (name === "Abyan Mufid Shaqille") {
-      note = "Telah menunjukkan perkembangan baik dalam komunikasi lisan.";
-    } else if (name === "Cherilyn Nafeeza Ardiansyah") {
-      note = "Perlu fokus pada ketepatan waktu dalam mengumpulkan tugas.";
-    }
+interface HomeroomNote {
+  id: number;
+  student_id: number;
+  note: string;
+}
 
-    return {
-      key: index.toString(),
-      fullName: name,
-      note: note,
-    };
-  }
-);
+interface HomeroomNotesData {
+  key: Key; // Menggunakan student_classroom ID sebagai key
+  studentId: number; // student_id yang akan disubmit
+  fullName: string;
+  note: string; // Catatan berupa teks/string
+}
 
 // ===========================================
 // 2. KOMPONEN DAN LOGIC
 // ===========================================
 
 const HomeroomNotesPage: React.FC = () => {
+  // --- State Data Utama ---
+  const [loading, setLoading] = useState<boolean>(true);
+  const [academicYearInfo, setAcademicYearInfo] = useState<{
+    year: string;
+    semester: string;
+    id: number | null;
+  }>({
+    year: "Loading...",
+    semester: "",
+    id: null,
+  });
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+
+  // Perubahan: selectedClassId default null, selectedClassName default "Pilih Kelas"
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [selectedClassName, setSelectedClassName] =
+    useState<string>("Pilih Kelas");
+
   const [homeroomNotesData, setHomeroomNotesData] = useState<
     HomeroomNotesData[]
-  >(initialHomeroomNotesData);
-  const [loading, setLoading] = useState<boolean>(false);
+  >([]);
 
-  // --- LOGIC PERUBAHAN DATA HOMEROOM NOTES ---
+  // --- State Filtering ---
+  const [searchTerm, setSearchTerm] = useState<string>("");
 
-  const handleDataChange = (
-    name: string,
-    value: string // Menerima string dari TextArea
-  ) => {
+  // ===========================================
+  // FUNGSI FETCHING DATA API
+  // ===========================================
+
+  const fetchAcademicYear = async () => {
+    try {
+      const response = await axios.get<AcademicYear[]>(
+        `${API_BASE_URL}/academic-years`
+      );
+      const activeYear = response.data.find((year) => year.is_active);
+
+      if (activeYear) {
+        let semester = "";
+        if (activeYear.is_ganjil) semester = "Ganjil";
+        else if (activeYear.is_genap) semester = "Genap";
+
+        setAcademicYearInfo({
+          year: activeYear.year,
+          semester: semester,
+          id: activeYear.id,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching academic year:", error);
+      toast.error("Gagal mengambil data Tahun Ajaran.");
+    }
+  };
+
+  const fetchClassrooms = async () => {
+    try {
+      const response = await axios.get<{ data: Classroom[] }>(
+        `${API_BASE_URL}/classrooms`
+      );
+      const classes = response.data.data;
+      setClassrooms(classes);
+
+      // Perubahan: Hapus logika default selection. selectedClassId tetap null.
+      if (classes.length === 0) {
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error fetching classrooms:", error);
+      toast.error("Gagal mengambil data Kelas.");
+    }
+  };
+
+  const fetchStudentsAndNotes = useCallback(async (classId: number) => {
+    setLoading(true);
+    if (!API_BASE_URL) {
+      toast.error("API Base URL tidak ditemukan di environment variables.");
+      setLoading(false);
+      return;
+    }
+    try {
+      // 1. Ambil Data Siswa
+      const studentsRes = await axios.get<{ data: StudentClassroom[] }>(
+        `${API_BASE_URL}/student/classroom?classroom=${classId}`
+      );
+      const rawStudents = studentsRes.data.data;
+
+      // 2. Ambil Data Catatan Homeroom yang Sudah Tersimpan
+      const notesRes = await axios.get<{ data: HomeroomNote[] }>(
+        `${API_BASE_URL}/report-homerooms?classroom=${classId}`
+      );
+      const savedNotesMap = new Map<number, string>();
+      notesRes.data.data.forEach((note) => {
+        savedNotesMap.set(note.student_id, note.note);
+      });
+
+      // 3. Gabungkan dan Perbarui State Catatan
+      const combinedData: HomeroomNotesData[] = rawStudents.map(
+        (studentRecord) => {
+          const studentId = studentRecord.student.id;
+          const savedNote = savedNotesMap.get(studentId) || "";
+
+          return {
+            key: studentRecord.id.toString(), // student_classroom ID
+            studentId: studentId, // student ID
+            fullName: studentRecord.student.fullname,
+            note: savedNote,
+          };
+        }
+      );
+
+      setHomeroomNotesData(combinedData);
+    } catch (error) {
+      console.error("Error fetching students and notes:", error);
+      toast.error("Gagal memuat data Siswa atau Catatan Homeroom.");
+      setHomeroomNotesData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // --- useEffect untuk Inisialisasi Data Awal ---
+  useEffect(() => {
+    fetchAcademicYear();
+    fetchClassrooms();
+  }, []);
+
+  // --- useEffect untuk Memuat Data Siswa/Catatan ketika Kelas Berubah ---
+  useEffect(() => {
+    if (selectedClassId) {
+      fetchStudentsAndNotes(selectedClassId);
+    } else {
+      // Jika tidak ada kelas yang dipilih, atur data kosong dan non-loading
+      setHomeroomNotesData([]);
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClassId]);
+
+  // ===========================================
+  // LOGIC INTERAKSI UI
+  // ===========================================
+
+  const handleDataChange = (studentId: number, value: string) => {
     setHomeroomNotesData((prevData) =>
       prevData.map((record) =>
-        record.fullName === name ? { ...record, note: value } : record
+        record.studentId === studentId ? { ...record, note: value } : record
       )
     );
   };
 
-  // --- LOGIC SUBMIT ---
-
-  const handleSubmit = (record: HomeroomNotesData) => {
-    setLoading(true);
-    message.loading({
-      content: `Submitting Homeroom Notes data for ${record.fullName}...`,
-      key: "submitKey",
-    });
-
-    // Simulasi API call
-    setTimeout(() => {
-      setLoading(false);
-      message.success({
-        content: `Data Homeroom Notes ${record.fullName} berhasil disimpan!`,
-        key: "submitKey",
-        duration: 2,
-      });
-      console.log("Submitted Homeroom Notes Data:", record);
-    }, 1500);
+  /**
+   * @function handleClassChange
+   * @description Mengubah kelas yang dipilih.
+   */
+  const handleClassChange = (value: string) => {
+    // Format value: "id|nama_kelas (kode)"
+    const [id, code, name] = value.split("|"); // Perubahan: menangkap code dan name
+    const classId = parseInt(id, 10);
+    if (classId) {
+      // Perubahan: Menggunakan format code (name) untuk selectedClassName
+      setSelectedClassId(classId);
+      setSelectedClassName(`${code} (${name})`);
+    }
   };
 
-  // --- DEFINISI KOLOM HOMEROOM NOTES (Menggunakan TextArea) ---
+  // ===========================================
+  // LOGIC SUBMIT (API Call)
+  // ===========================================
+
+  const handleSubmit = async (record: HomeroomNotesData) => {
+    if (!selectedClassId) {
+      toast.warn("Mohon pilih kelas terlebih dahulu.", { autoClose: 3000 });
+      return;
+    }
+
+    if (!record.note.trim()) {
+      toast.warn(`Catatan untuk ${record.fullName} tidak boleh kosong.`, {
+        autoClose: 3000,
+      });
+      return;
+    }
+
+    // Mengatur loading di dalam logic submit agar table tidak sepenuhnya ter-disable saat submit per baris
+    // Namun, karena kita me-reload semua data setelah submit, kita tetap menggunakan loading global
+    // untuk mencegah perubahan pada input lain saat proses loading data.
+    setLoading(true);
+    const toastId = toast.loading(
+      `Menyimpan catatan untuk ${record.fullName}...`
+    );
+
+    try {
+      const dataToSend = {
+        classroom_id: selectedClassId,
+        student_id: record.studentId,
+        note: record.note,
+      };
+
+      await axios.post(`${API_BASE_URL}/report-homerooms`, dataToSend);
+
+      toast.update(toastId, {
+        render: `Catatan ${record.fullName} berhasil disimpan!`,
+        type: "success",
+        isLoading: false,
+        autoClose: 3000,
+      });
+
+      // Reload data untuk menampilkan catatan yang baru disimpan
+      await fetchStudentsAndNotes(selectedClassId);
+    } catch (error) {
+      console.error("Submission Error:", error);
+      const errorMessage =
+        axios.isAxiosError(error) && error.response?.data?.message
+          ? error.response.data.message
+          : `Gagal menyimpan data ${record.fullName}. Terjadi kesalahan koneksi/server.`;
+
+      toast.update(toastId, {
+        render: errorMessage,
+        type: "error",
+        isLoading: false,
+        autoClose: 5000,
+      });
+      setLoading(false);
+    }
+  };
+
+  // --- DEFINISI KOLOM HOMEROOM NOTES ---
 
   const columns: ColumnsType<HomeroomNotesData> = [
     {
       title: "Full Name",
       dataIndex: "fullName",
       key: "fullName",
-      width: "30%", // Lebar disesuaikan agar TextArea memiliki ruang
-      fixed: "left", // Mempertahankan nama di sisi kiri saat scroll
+      width: "30%",
+      fixed: "left",
+      filteredValue: searchTerm ? [searchTerm] : [],
+      onFilter: (value, record) => {
+        return record.fullName
+          .toLowerCase()
+          .includes((value as string).toLowerCase());
+      },
+      sorter: (a, b) => a.fullName.localeCompare(b.fullName),
     },
     {
       title: "NOTE (N)",
       dataIndex: "note",
       key: "note",
-      width: "55%", // Lebar ekstra untuk teks
+      width: "55%",
       render: (note: string, record) => (
         <TextArea
           value={note}
           placeholder="Masukkan catatan homeroom..."
-          rows={2} // Menjaga baris tetap rapi
+          rows={2}
           style={{ width: "100%", minWidth: 150 }}
-          onChange={(e) => handleDataChange(record.fullName, e.target.value)}
+          onChange={(e) => handleDataChange(record.studentId, e.target.value)}
           disabled={loading}
         />
       ),
@@ -144,7 +340,7 @@ const HomeroomNotesPage: React.FC = () => {
       key: "actions",
       align: "center",
       width: "15%",
-      fixed: "right", // Mempertahankan tombol di sisi kanan
+      fixed: "right",
       render: (_, record) => (
         <Button
           type="primary"
@@ -169,6 +365,7 @@ const HomeroomNotesPage: React.FC = () => {
           background: "white",
           height: 40,
           lineHeight: "40px",
+          borderBottom: "1px solid #f0f0f0",
         }}
       >
         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -187,10 +384,10 @@ const HomeroomNotesPage: React.FC = () => {
           }}
         >
           <Title level={1} style={{ margin: 0 }}>
-            Homeroom Notes Report
+            Homeroom Notes
           </Title>
           <Text style={{ fontSize: 24, fontWeight: "bold" }}>
-            {classInfo.academicYear}
+            {academicYearInfo.year} ({academicYearInfo.semester || "Semester"})
           </Text>
         </div>
 
@@ -201,54 +398,101 @@ const HomeroomNotesPage: React.FC = () => {
             justifyContent: "flex-start",
             alignItems: "center",
             marginBottom: 30,
+            gap: 10,
           }}
         >
           <Search
-            placeholder="Search student records..."
-            style={{ width: 300, marginRight: 10 }}
+            placeholder="Cari nama siswa..."
+            style={{ width: 300 }}
             allowClear
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            disabled={loading && !searchTerm}
           />
           <Select
-            defaultValue="Classroom"
-            style={{ width: 120, marginRight: 10 }}
+            placeholder="Pilih Kelas" // Placeholder yang diminta
+            style={{ width: 250 }}
+            // Perubahan: Nilai value hanya terisi jika selectedClassId ada
+            value={
+              selectedClassId
+                ? `${selectedClassId}|${
+                    classrooms.find((c) => c.id === selectedClassId)?.code
+                  }|${
+                    classrooms.find((c) => c.id === selectedClassId)?.class_name
+                  }`
+                : undefined
+            }
+            onChange={handleClassChange}
+            disabled={loading}
           >
-            <Option value="Classroom">Classroom</Option>
-            {/* Add more options here */}
+            {classrooms.map((cls) => (
+              // Perubahan: Nilai Option menggunakan format ID|CODE|NAME
+              // Tampilan Option hanya menggunakan CODE
+              <Option
+                key={cls.id}
+                value={`${cls.id}|${cls.code}|${cls.class_name}`}
+              >
+                {cls.code}
+              </Option>
+            ))}
           </Select>
           <Button
             type="primary"
-            // Menggunakan warna hijau dari AttitudesReportPage
             style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
+            disabled={loading}
           >
             Apply Filter
           </Button>
         </div>
 
         {/* Class Title */}
-        <Title level={4} style={{ marginBottom: 15 }}>
-          Class : {classInfo.className}
+        <Title level={3} style={{ marginBottom: 15 }}>
+          Class :{" "}
+          <Text style={{ fontSize: 20 }} strong>
+            {/* Tampilkan selectedClassName yang sudah di-format (Code (Name)) */}
+            {selectedClassId ? selectedClassName : " Pilih kelas"}
+          </Text>
         </Title>
         <Divider style={{ marginTop: 0, marginBottom: "20px" }} />
 
-        {/* --- Bagian Homeroom Notes --- */}
+        {/* --- Bagian Homeroom Notes Table --- */}
         <Title level={3} style={{ marginTop: 0, marginBottom: 15 }}>
           Student Notes
         </Title>
-        <Table
-          columns={columns}
-          dataSource={homeroomNotesData}
-          rowKey="fullName"
-          pagination={false}
-          bordered={true}
-          size="middle"
-          loading={loading}
-          // Menambahkan scrollX agar kolom nama dan aksi tetap terlihat jika lebar layar terbatas
-          scroll={{ x: 800 }}
-          style={{ marginBottom: 40 }}
-        />
+        <Spin spinning={loading} tip="Memuat data siswa dan catatan...">
+          <Table
+            columns={columns}
+            dataSource={homeroomNotesData.filter((record) =>
+              record.fullName.toLowerCase().includes(searchTerm.toLowerCase())
+            )}
+            rowKey="key"
+            pagination={false}
+            bordered={true}
+            size="middle"
+            scroll={{ x: 800 }}
+            style={{ marginBottom: 40 }}
+            locale={{
+              emptyText: selectedClassId
+                ? "Tidak ada data siswa ditemukan."
+                : "Silakan pilih kelas untuk memuat data siswa.",
+            }}
+          />
+        </Spin>
 
         <div style={{ height: "50px" }} />
       </Content>
+      <ToastContainer
+        position="top-right" // Atur posisi (opsional)
+        autoClose={5000} // Atur auto close time (opsional)
+        hideProgressBar={false} // (opsional)
+        newestOnTop={false} // (opsional)
+        closeOnClick // (opsional)
+        rtl={false} // (opsional)
+        pauseOnFocusLoss // (opsional)
+        draggable // (opsional)
+        pauseOnHover // (opsional)
+        theme="light" // (opsional)
+      />
     </Layout>
   );
 };

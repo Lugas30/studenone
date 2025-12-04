@@ -249,10 +249,12 @@ const items: MenuItem[] = [
       "/academic-report/life-skill"
     ),
     getItem(
-      <Link href="/academic-report/health-attendance">
-        Health & Attendance
-      </Link>,
-      "/academic-report/health-attendance"
+      <Link href="/academic-report/attendance">Attendance</Link>,
+      "/academic-report/attendance"
+    ),
+    getItem(
+      <Link href="/academic-report/health-condition">Health Condition</Link>,
+      "/academic-report/health-condition"
     ),
     getItem(
       <Link href="/academic-report/homeroom-notes">Homeroom Notes</Link>,

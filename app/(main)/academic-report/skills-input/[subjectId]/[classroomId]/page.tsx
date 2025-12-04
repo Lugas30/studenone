@@ -1,953 +1,746 @@
+// src/app/academic-report/skills-input/[subjectId]/[classroomId]/page.tsx
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useParams } from "next/navigation";
 import {
   Table,
   Button,
-  Space,
   Typography,
   Layout,
-  Divider,
-  InputNumber,
+  Input,
+  Form,
   Spin,
-  Alert,
+  message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useParams } from "next/navigation";
 import axios from "axios";
-import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { toast } from "react-toastify";
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 
-// Pastikan variabel lingkungan (NEXT_PUBLIC_API_URL) sudah terdefinisi
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-const api = axios.create({
-  baseURL: BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
-
-// ===================================
-// 1. DEFINISI TIPE & INTERFACE
-// ===================================
-interface AcademicInfo {
-  year: string;
-  semester: string;
-  academicId: number | null;
+// --- API Configuration ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+if (!API_BASE_URL) {
+  message.error("NEXT_PUBLIC_API_URL is not defined in .env");
 }
 
-interface Predicate {
+// =================================================================
+// 1. TYPE DEFINITIONS
+// =================================================================
+
+interface AcademicYear {
   id: number;
-  predicate: string;
-  descriptive: string;
-  min_value: number;
-  max_value: number;
-  academic_id: number;
+  year: string;
+  is_ganjil: boolean;
+  is_genap: boolean;
+  is_active: boolean;
 }
 
-interface StudentPerformance {
-  key: string;
-  studentId: number;
-  grade: string | number;
-  fullName: string;
+interface Subject {
+  id: number;
+  name: string;
+  grade: string;
+  kkm: number;
+}
 
-  perf: number[];
-  perfAvrg: number;
-  prod: number[];
-  prodAvrg: number;
-  proj: number[];
-  projAvrg: number;
+interface StudentData {
+  id: number; // student_classroom id
+  student_id: number;
+  classroom_id: number;
+  semester: string;
+  student: {
+    id: number; // student id
+    fullname: string;
+    grade: string;
+  };
+  classroom: {
+    id: number;
+    class_name: string;
+  };
+}
+
+interface ReportSkillData {
+  id?: number; // report_skill id, null if not submitted yet
+  student_id: number;
+  fullname: string; // aggregated for easier mapping
+
+  perf1: number | "";
+  perf2: number | "";
+  perf3: number | "";
+  avrg_perf: number;
+
+  prod1: number | "";
+  prod2: number | "";
+  prod3: number | "";
+  avrg_prod: number;
+
+  proj1: number | "";
+  proj2: number | "";
+  proj3: number | "";
+  avrg_proj: number;
+
   final: number;
   predicate: string;
-  desc: string;
+  description: string;
 }
 
-interface ApiErrorResponse {
-  message?: string;
-}
+// =================================================================
+// 2. HELPER FUNCTIONS
+// =================================================================
 
-// ===================================
-// 2. FUNGSI UTILITY (PERHITUNGAN)
-// ===================================
+const calculateAvg = (p1: number, p2: number, p3: number): number => {
+  // Hanya hitung rata-rata dari nilai yang valid (angka > 0)
+  const scores = [p1, p2, p3].filter((n) => !isNaN(n) && n > 0);
+  if (scores.length === 0) return 0;
+  const sum = scores.reduce((acc, score) => acc + score, 0);
+  return Math.round(sum / scores.length);
+};
 
-/**
- * Menghitung rata-rata nilai dan menentukan nilai akhir (final) serta predikat.
- * @param data Data performa siswa saat ini.
- * @param predicates Daftar predikat yang aktif.
- * @returns StudentPerformance yang diperbarui.
- */
-const calculatePerformanceMetrics = (
-  data: StudentPerformance,
-  predicates: Predicate[]
-): StudentPerformance => {
-  const avg = (arr: number[]) => {
-    const validValues = arr.filter(
-      (v) => v !== undefined && v !== null && !isNaN(v) && v >= 0 && v <= 100
-    );
-    if (validValues.length === 0) return 0;
-    return parseFloat(
-      (validValues.reduce((a, b) => a + b, 0) / validValues.length).toFixed(1)
-    );
-  };
+const calculateFinalAvg = (
+  avgP: number,
+  avgD: number,
+  avgJ: number
+): number => {
+  // Hanya hitung rata-rata dari Average (yang nilainya > 0)
+  const avgs = [avgP, avgD, avgJ].filter((n) => n > 0);
+  if (avgs.length === 0) return 0;
+  const sum = avgs.reduce((acc, avg) => acc + avg, 0);
+  return Math.round(sum / avgs.length);
+};
 
-  const perfAvrg = avg(data.perf);
-  const prodAvrg = avg(data.prod);
-  const projAvrg = avg(data.proj);
+const getSemesterName = (academicYear: AcademicYear | null): string => {
+  if (!academicYear) return "";
+  return academicYear.is_ganjil
+    ? "Ganjil"
+    : academicYear.is_genap
+    ? "Genap"
+    : "";
+};
 
-  // Hitung Nilai Akhir: rata-rata dari tiga rata-rata yang nilainya > 0
-  const averages = [perfAvrg, prodAvrg, projAvrg].filter((v) => v > 0);
-  const final =
-    averages.length > 0
-      ? parseFloat(
-          (averages.reduce((a, b) => a + b, 0) / averages.length).toFixed(0)
-        )
-      : 0;
+const getPredicateAndDesc = (finalScore: number, kkm: number = 70) => {
+  let predicate = "-";
+  let description = "Nilai belum dimasukkan";
 
-  let predicate = "";
-  let desc = "";
+  if (finalScore === 0) return { predicate, description };
 
-  const sortedPredicates = [...predicates].sort(
-    (a, b) => b.min_value - a.min_value
-  );
-
-  const matchedPredicate = sortedPredicates.find(
-    (p) => final >= p.min_value && final <= p.max_value
-  );
-
-  if (matchedPredicate) {
-    predicate = matchedPredicate.predicate;
-    desc = matchedPredicate.descriptive;
-  } else if (final === 0) {
-    predicate = "-";
-    desc = "-";
+  // Logic Predicate (example: based on KKM and common grading scale)
+  if (finalScore >= kkm + 10) {
+    predicate = "A";
+    description = "Excellent";
+  } else if (finalScore >= kkm + 5) {
+    predicate = "B";
+    description = "Great";
+  } else if (finalScore >= kkm) {
+    predicate = "C";
+    description = "Good";
   } else {
-    // Fallback jika tidak ada predikat yang cocok dan nilai > 0
     predicate = "D";
-    desc = "Perlu Perbaikan/Bimbingan";
+    description = "Need Improvement";
   }
 
-  return {
-    ...data,
-    perfAvrg,
-    prodAvrg,
-    projAvrg,
-    final,
-    predicate,
-    desc,
-  };
-};
-
-// ===================================
-// 3. FUNGSI API (HELPER UNTUK KOMPONEN)
-// ===================================
-
-/**
- * Menampilkan notifikasi toast.
- */
-const showToast = (
-  message: string,
-  type: "success" | "error" | "info" | "default" | "warn" = "success"
-) => {
-  switch (type) {
-    case "success":
-      toast.success(message, { autoClose: 2000 });
-      break;
-    case "error":
-      toast.error(message, { autoClose: 3000 });
-      break;
-    case "info":
-      toast.info(message, { autoClose: 2000 });
-      break;
-    case "warn":
-      toast.warn(message, { autoClose: 3000 });
-      break;
-    default:
-      toast(message);
-  }
+  return { predicate, description };
 };
 
 /**
- * Mengambil informasi tahun akademik yang aktif.
+ * MENGUBAH NILAI KOSONG ('') MENJADI 0 (NOL) AGAR LOLOS VALIDASI REQUIRED DI SERVER.
+ * Nilai yang sudah berupa angka akan tetap dikirim sebagai angka.
  */
-const fetchActiveAcademicInfo = async (): Promise<AcademicInfo> => {
-  try {
-    const response = await api.get("/academic-years");
-    const activeYear = response.data.data.find(
-      (item: any) => item.is_active === true
-    );
-    if (!activeYear) {
-      throw new Error("Tahun akademik aktif tidak ditemukan.");
-    }
-    const semester = activeYear.is_ganjil
-      ? "Ganjil"
-      : activeYear.is_genap
-      ? "Genap"
-      : "N/A";
+const formatScore = (score: number | "") => (score === "" ? 0 : Number(score));
 
-    return {
-      year: activeYear.year,
-      semester: semester,
-      academicId: activeYear.id,
-    };
-  } catch (error) {
-    showToast("Gagal mengambil data Tahun Akademik.", "error");
-    return { year: "N/A", semester: "N/A", academicId: null };
-  }
-};
-
-/**
- * Mengambil data predikat/KKM.
- */
-const fetchPredicateData = async (): Promise<Predicate[]> => {
-  try {
-    const response = await api.get("/predicate-kktps");
-    if (response.data && Array.isArray(response.data.data)) {
-      return response.data.data.map((item: any) => ({
-        id: item.id,
-        predicate: item.predicate,
-        descriptive: item.descriptive,
-        min_value: item.min_value,
-        max_value: item.max_value,
-        academic_id: item.academic_id,
-      })) as Predicate[];
-    }
-    return [];
-  } catch (error) {
-    showToast("Gagal mengambil data Predikat/KKM.", "error");
-    return [];
-  }
-};
-
-/**
- * Mengambil nama mata pelajaran berdasarkan ID.
- */
-const fetchSubjectName = async (subjectId: string): Promise<string> => {
-  try {
-    const response = await api.get("/subjects");
-    const subjectData = response.data.data.find(
-      (item: any) => item.id === parseInt(subjectId)
-    );
-    return subjectData ? subjectData.name : "Mata Pelajaran Tidak Ditemukan";
-  } catch (error) {
-    showToast("Gagal mengambil data Mata Pelajaran.", "error");
-    return "Loading...";
-  }
-};
-
-/**
- * Mengambil data siswa dan menggabungkannya dengan nilai yang sudah tersimpan.
- */
-const fetchStudentData = async (
-  classroomId: string,
-  subjectId: string,
-  predicates: Predicate[]
-): Promise<StudentPerformance[]> => {
-  try {
-    const studentResponse = await api.get(
-      `/student/classroom?classroom=${classroomId}`
-    );
-    const students: StudentPerformance[] = studentResponse.data.data.map(
-      (item: any) => ({
-        key: item.student.id.toString(),
-        studentId: item.student.id,
-        grade: item.student.grade,
-        fullName: item.student.fullname,
-        perf: [0, 0, 0],
-        prod: [0, 0, 0],
-        proj: [0, 0, 0],
-        perfAvrg: 0,
-        prodAvrg: 0,
-        projAvrg: 0,
-        final: 0,
-        predicate: "",
-        desc: "",
-      })
-    );
-
-    // Ambil data nilai yang sudah disubmit
-    const reportResponse = await api.get(`/report-skill`);
-    const submittedReports: any[] = reportResponse.data.data;
-
-    // Gabungkan data siswa dengan nilai yang sudah ada
-    const mergedData = students.map((student) => {
-      const report = submittedReports.find(
-        (r) =>
-          r.student_id === student.studentId &&
-          r.subject_id === parseInt(subjectId) &&
-          r.classroom_id === parseInt(classroomId)
-      );
-
-      if (report) {
-        // Jika ada laporan nilai, muat nilai dari laporan tersebut
-        const loadedData: StudentPerformance = {
-          ...student,
-          perf: [report.perf1 || 0, report.perf2 || 0, report.perf3 || 0],
-          prod: [report.prod1 || 0, report.prod2 || 0, report.prod3 || 0],
-          proj: [report.proj1 || 0, report.proj2 || 0, report.proj3 || 0],
-          perfAvrg: report.avrg_perf,
-          prodAvrg: report.avrg_prod,
-          projAvrg: report.avrg_proj,
-          final: report.final,
-          predicate: report.predicate,
-          desc: report.description,
-        };
-        return loadedData;
-      }
-      // Jika belum ada nilai, hitung metrik awal (semua 0)
-      return calculatePerformanceMetrics(student, predicates);
-    });
-
-    return mergedData;
-  } catch (error) {
-    showToast(
-      "Gagal mengambil data Siswa atau Nilai yang sudah tersimpan.",
-      "error"
-    );
-    return [];
-  }
-};
-
-/**
- * Mengirim atau memperbarui nilai siswa ke API.
- */
-const submitStudentScore = async (
-  data: StudentPerformance,
-  subjectId: string,
-  classroomId: string
-) => {
-  const payload = {
-    subject_id: parseInt(subjectId),
-    student_id: data.studentId,
-    classroom_id: parseInt(classroomId),
-    grade: parseInt(data.grade.toString()),
-
-    perf1: data.perf[0],
-    perf2: data.perf[1],
-    perf3: data.perf[2],
-    avrg_perf: data.perfAvrg,
-    prod1: data.prod[0],
-    prod2: data.prod[1],
-    prod3: data.prod[2],
-    avrg_prod: data.prodAvrg,
-    proj1: data.proj[0],
-    proj2: data.proj[1],
-    proj3: data.proj[2],
-    avrg_proj: data.projAvrg,
-
-    final: data.final,
-    predicate: data.predicate,
-    description: data.desc,
-  };
-
-  try {
-    // Asumsi API menggunakan POST untuk create/update (upsert)
-    await api.post("/report-skill", payload);
-    showToast(
-      `✅ Nilai ${data.fullName} berhasil disimpan/diperbarui!`,
-      "success"
-    );
-  } catch (error) {
-    let errorMessage = `❌ Gagal menyimpan nilai ${data.fullName}. Cek koneksi atau format data API.`;
-
-    if (axios.isAxiosError(error) && error.response) {
-      const apiError = error.response.data as ApiErrorResponse;
-
-      if (apiError && apiError.message) {
-        errorMessage = apiError.message;
-      }
-    }
-
-    showToast(errorMessage, "error");
-    throw error;
-  }
-};
-
-// ===================================
-// 4. KOMPONEN EDITABLE CELL
-// ===================================
-
-interface EditableCellProps {
-  value: number;
-  dataIndex: string;
-  index: number;
-  record: StudentPerformance;
-  onChange: (
-    key: string,
-    dataIndex: string,
-    arrayIndex: number,
-    newValue: number
-  ) => void;
-}
-
-/**
- * Komponen sel tabel yang dapat diedit menggunakan InputNumber Ant Design.
- */
-const EditableCell: React.FC<EditableCellProps> = ({
-  value,
-  dataIndex,
-  index,
-  record,
-  onChange,
-}) => {
-  // Tampilkan string kosong jika nilainya 0, undefined, atau null agar placeholder berfungsi
-  const displayValue =
-    value === undefined || value === null || value === 0 ? "" : value;
-
-  return (
-    <InputNumber
-      min={0}
-      max={100}
-      value={displayValue as any} // Cast ke any karena value bisa string kosong ("")
-      onChange={(newValue) => {
-        if (newValue === null || newValue === undefined) {
-          onChange(record.key, dataIndex, index, 0);
-        } else if (typeof newValue === "number") {
-          // Bulatkan nilai ke bilangan bulat dan pastikan di antara 0-100
-          const clampedValue = Math.min(100, Math.max(0, Math.round(newValue)));
-          onChange(record.key, dataIndex, index, clampedValue);
-        }
-      }}
-      style={{ width: "100%", textAlign: "center", padding: "4px 8px" }}
-      controls={false} // Sembunyikan tombol naik/turun
-      precision={0} // Pastikan input bilangan bulat
-      size="small"
-      className="hide-number-spinner"
-      placeholder="-"
-    />
-  );
-};
-
-// ===================================
-// 5. KOMPONEN UTAMA
-// ===================================
+// =================================================================
+// 3. MAIN COMPONENT
+// =================================================================
 
 const SkillsInputPage: React.FC = () => {
   const params = useParams();
-  const subjectId = Array.isArray(params.subjectId)
-    ? params.subjectId[0]
-    : (params.subjectId as string);
-  const classroomId = Array.isArray(params.classroomId)
-    ? params.classroomId[0]
-    : (params.classroomId as string);
+  const subjectId = params.subjectId as string;
+  const classroomId = params.classroomId as string;
 
-  const [studentData, setStudentData] = useState<StudentPerformance[]>([]);
-  const [academicInfo, setAcademicInfo] = useState<AcademicInfo>({
-    year: "N/A",
-    semester: "N/A",
-    academicId: null,
-  });
-  const [subjectName, setSubjectName] = useState("Loading...");
+  const [form] = Form.useForm();
+
   const [loading, setLoading] = useState(true);
-  const [predicates, setPredicates] = useState<Predicate[]>([]);
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [submittingStudentId, setSubmittingStudentId] = useState<number | null>(
-    null
-  );
+  const [academicYear, setAcademicYear] = useState<AcademicYear | null>(null);
+  const [subject, setSubject] = useState<Subject | null>(null);
+  const [studentsData, setStudentsData] = useState<ReportSkillData[]>([]);
 
-  /**
-   * Efek untuk memuat data awal (Info Akademik, Predikat, Nama Mapel, Data Siswa).
-   */
-  useEffect(() => {
-    if (!subjectId || !classroomId) {
-      setApiError("Parameter Subject ID atau Classroom ID hilang.");
-      setLoading(false);
-      return;
-    }
+  // 1. Fetch Basic Data
+  const fetchData = useCallback(async () => {
+    if (!API_BASE_URL) return;
 
-    const loadData = async () => {
+    try {
       setLoading(true);
-      setApiError(null);
-      try {
-        const [activeInfo, predicateData, name] = await Promise.all([
-          fetchActiveAcademicInfo(),
-          fetchPredicateData(),
-          fetchSubjectName(subjectId),
-        ]);
 
-        setAcademicInfo(activeInfo);
-        setPredicates(predicateData);
-        setSubjectName(name);
+      // --- Fetch Academic Year ---
+      const academicRes = await axios.get(`${API_BASE_URL}/academic-years`);
+      const activeAcademicYear = academicRes.data.find(
+        (a: AcademicYear) => a.is_active
+      );
+      setAcademicYear(activeAcademicYear || null);
 
-        if (predicateData.length === 0) {
-          showToast(
-            "Peringatan: Data Predikat/KKM kosong. Menggunakan logika fallback.",
-            "warn"
-          );
-        }
+      // --- Fetch Subject Name & Grade ---
+      const subjectRes = await axios.get(`${API_BASE_URL}/subjects`);
+      const selectedSubject = subjectRes.data.data.find(
+        (s: Subject) => s.id.toString() === subjectId
+      );
+      setSubject(selectedSubject || null);
 
-        const data = await fetchStudentData(
-          classroomId,
-          subjectId,
-          predicateData
-        );
-        setStudentData(data);
+      const grade = selectedSubject?.grade || "1";
+      const kkm = selectedSubject?.kkm || 70;
 
-        showToast(`Berhasil memuat ${data.length} data siswa.`, "success");
-      } catch (error: any) {
-        const errorMessage =
-          error.message ||
-          error.response?.data?.message ||
-          "Gagal memuat data dari API.";
-        setApiError(errorMessage);
-        showToast(`Error: ${errorMessage}`, "error");
-      } finally {
+      // --- Fetch Students in Classroom ---
+      const studentsRes = await axios.get(
+        `${API_BASE_URL}/student/classroom?classroom=${classroomId}`
+      );
+      const students: StudentData[] = studentsRes.data.data || [];
+
+      if (students.length === 0) {
+        setStudentsData([]);
+        toast.info("Tidak ada data siswa ditemukan di kelas ini.");
         setLoading(false);
-      }
-    };
-
-    loadData();
-  }, [subjectId, classroomId]);
-
-  /**
-   * Handler saat nilai input berubah. Akan menghitung ulang metrik.
-   */
-  const handleValueChange = useCallback(
-    (key: string, dataIndex: string, arrayIndex: number, newValue: number) => {
-      setStudentData((prevData) => {
-        const newData = prevData.map((item) => {
-          if (item.key === key) {
-            const updatedItem: StudentPerformance = { ...item };
-
-            // Update array nilai (perf, prod, proj) pada index tertentu
-            if (["perf", "prod", "proj"].includes(dataIndex)) {
-              const currentArray = [...(updatedItem as any)[dataIndex]];
-              currentArray[arrayIndex] = newValue;
-              (updatedItem as any)[dataIndex] = currentArray;
-            }
-
-            // Hitung ulang semua metrik dan predikat
-            return calculatePerformanceMetrics(updatedItem, predicates);
-          }
-          return item;
-        });
-        return newData;
-      });
-    },
-    [predicates]
-  );
-
-  /**
-   * Handler untuk tombol Simpan/Update. Mengirim data ke API.
-   */
-  const handleAction = useCallback(
-    async (data: StudentPerformance) => {
-      setSubmittingStudentId(data.studentId);
-      if (!subjectId || !classroomId) {
-        showToast("Parameter Subject ID atau Classroom ID hilang.", "error");
-        setSubmittingStudentId(null);
         return;
       }
 
-      try {
-        await submitStudentScore(data, subjectId, classroomId);
-      } catch (error) {
-        // Error sudah ditangani dan di-toast di fungsi submitStudentScore
-      } finally {
-        setSubmittingStudentId(null);
-      }
-    },
-    [subjectId, classroomId]
-  );
+      // --- Fetch Previous Submitted Scores ---
+      const scoresRes = await axios.get(
+        `${API_BASE_URL}/report-skill?classroom_id=${classroomId}&subject_id=${subjectId}&grade=${grade}`
+      );
+      const submittedScores: ReportSkillData[] = scoresRes.data || [];
 
-  /**
-   * Definisi kolom-kolom tabel.
-   */
-  const columns: ColumnsType<StudentPerformance> = useMemo(
+      // --- Merge Student Data with Scores ---
+      const mergedData: ReportSkillData[] = students.map((student) => {
+        const existingScore = submittedScores.find(
+          (score) => score.student_id === student.student_id
+        );
+
+        const initialValues = {
+          perf1: existingScore?.perf1 ?? "",
+          perf2: existingScore?.perf2 ?? "",
+          perf3: existingScore?.perf3 ?? "",
+          prod1: existingScore?.prod1 ?? "",
+          prod2: existingScore?.prod2 ?? "",
+          prod3: existingScore?.prod3 ?? "",
+          proj1: existingScore?.proj1 ?? "",
+          proj2: existingScore?.proj2 ?? "",
+          proj3: existingScore?.proj3 ?? "",
+        };
+
+        const avrg_perf = calculateAvg(
+          Number(initialValues.perf1),
+          Number(initialValues.perf2),
+          Number(initialValues.perf3)
+        );
+        const avrg_prod = calculateAvg(
+          Number(initialValues.prod1),
+          Number(initialValues.prod2),
+          Number(initialValues.prod3)
+        );
+        const avrg_proj = calculateAvg(
+          Number(initialValues.proj1),
+          Number(initialValues.proj2),
+          Number(initialValues.proj3)
+        );
+
+        const final = calculateFinalAvg(avrg_perf, avrg_prod, avrg_proj);
+        const { predicate, description } = getPredicateAndDesc(final, kkm);
+
+        return {
+          id: existingScore?.id,
+          student_id: student.student_id,
+          fullname: student.student.fullname,
+          ...initialValues,
+          avrg_perf,
+          avrg_prod,
+          avrg_proj,
+          final,
+          predicate,
+          description,
+        };
+      });
+
+      setStudentsData(mergedData);
+
+      // Set initial form values
+      const initialFormValues = mergedData.reduce((acc, student, index) => {
+        acc[`${index}_perf1`] = student.perf1;
+        acc[`${index}_perf2`] = student.perf2;
+        acc[`${index}_perf3`] = student.perf3;
+        acc[`${index}_prod1`] = student.prod1;
+        acc[`${index}_prod2`] = student.prod2;
+        acc[`${index}_prod3`] = student.prod3;
+        acc[`${index}_proj1`] = student.proj1;
+        acc[`${index}_proj2`] = student.proj2;
+        acc[`${index}_proj3`] = student.proj3;
+        return acc;
+      }, {} as Record<string, any>);
+
+      form.setFieldsValue(initialFormValues);
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+      toast.error(
+        "Gagal memuat data. Silakan cek koneksi API dan parameter URL."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [classroomId, subjectId, form]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // 2. Logic to handle score changes and update calculated fields
+  const handleScoreChange = useCallback(() => {
+    const values = form.getFieldsValue();
+    const kkm = subject?.kkm || 70;
+
+    const updatedData: ReportSkillData[] = studentsData.map(
+      (student, index) => {
+        // Ambil nilai input, pastikan diubah menjadi 0 jika null/kosong untuk perhitungan sementara
+        const perf1 = Number(values[`${index}_perf1`]) || 0;
+        const perf2 = Number(values[`${index}_perf2`]) || 0;
+        const perf3 = Number(values[`${index}_perf3`]) || 0;
+
+        const prod1 = Number(values[`${index}_prod1`]) || 0;
+        const prod2 = Number(values[`${index}_prod2`]) || 0;
+        const prod3 = Number(values[`${index}_prod3`]) || 0;
+
+        const proj1 = Number(values[`${index}_proj1`]) || 0;
+        const proj2 = Number(values[`${index}_proj2`]) || 0;
+        const proj3 = Number(values[`${index}_proj3`]) || 0;
+
+        // Hitung rata-rata berdasarkan nilai yang ADA (> 0)
+        const avrg_perf = calculateAvg(perf1, perf2, perf3);
+        const avrg_prod = calculateAvg(prod1, prod2, prod3);
+        const avrg_proj = calculateAvg(proj1, proj2, proj3);
+
+        const final = calculateFinalAvg(avrg_perf, avrg_prod, avrg_proj);
+        const { predicate, description } = getPredicateAndDesc(final, kkm);
+
+        return {
+          ...student,
+          // Simpan kembali nilai input sebagai string/number (bukan hanya number) agar bisa kosong ('')
+          perf1:
+            values[`${index}_perf1`] === 0 ? 0 : values[`${index}_perf1`] || "",
+          perf2:
+            values[`${index}_perf2`] === 0 ? 0 : values[`${index}_perf2`] || "",
+          perf3:
+            values[`${index}_perf3`] === 0 ? 0 : values[`${index}_perf3`] || "",
+          avrg_perf,
+          prod1:
+            values[`${index}_prod1`] === 0 ? 0 : values[`${index}_prod1`] || "",
+          prod2:
+            values[`${index}_prod2`] === 0 ? 0 : values[`${index}_prod2`] || "",
+          prod3:
+            values[`${index}_prod3`] === 0 ? 0 : values[`${index}_prod3`] || "",
+          avrg_prod,
+          proj1:
+            values[`${index}_proj1`] === 0 ? 0 : values[`${index}_proj1`] || "",
+          proj2:
+            values[`${index}_proj2`] === 0 ? 0 : values[`${index}_proj2`] || "",
+          proj3:
+            values[`${index}_proj3`] === 0 ? 0 : values[`${index}_proj3`] || "",
+          avrg_proj,
+          final,
+          predicate,
+          description,
+        };
+      }
+    );
+
+    setStudentsData(updatedData);
+  }, [studentsData, form, subject]);
+
+  // 3. Handle Submit
+  const handleSaveScore = async (studentData: ReportSkillData) => {
+    if (!API_BASE_URL || !academicYear || !subject) {
+      toast.error("Data akademik/subjek belum lengkap.");
+      return;
+    }
+
+    // 1. Check minimal ada satu input nilai.
+    const scoreFields = [
+      studentData.perf1,
+      studentData.perf2,
+      studentData.perf3,
+      studentData.prod1,
+      studentData.prod2,
+      studentData.prod3,
+      studentData.proj1,
+      studentData.proj2,
+      studentData.proj3,
+    ];
+
+    const hasAnyScore = scoreFields.some((score) => score !== "");
+    if (!hasAnyScore) {
+      toast.warn(`Tidak ada nilai yang diinput untuk ${studentData.fullname}.`);
+      return;
+    }
+
+    // 2. Check input yang ADA adalah angka 0-100.
+    const invalidScore = scoreFields.find(
+      (score) =>
+        score !== "" &&
+        (isNaN(Number(score)) || Number(score) < 0 || Number(score) > 100)
+    );
+    if (invalidScore !== undefined) {
+      toast.error(
+        `Nilai yang dimasukkan '${invalidScore}' untuk ${studentData.fullname} tidak valid (harus angka 0-100).`
+      );
+      return;
+    }
+
+    // Construct Payload
+    const payload = {
+      subject_id: subject.id,
+      student_id: studentData.student_id,
+      classroom_id: Number(classroomId),
+      grade: Number(subject.grade),
+
+      // Menggunakan formatScore: '' diubah menjadi 0 untuk lolos validasi required server.
+      perf1: formatScore(studentData.perf1),
+      perf2: formatScore(studentData.perf2),
+      perf3: formatScore(studentData.perf3),
+      avrg_perf: studentData.avrg_perf,
+
+      prod1: formatScore(studentData.prod1),
+      prod2: formatScore(studentData.prod2),
+      prod3: formatScore(studentData.prod3),
+      avrg_prod: studentData.avrg_prod,
+
+      proj1: formatScore(studentData.proj1),
+      proj2: formatScore(studentData.proj2),
+      proj3: formatScore(studentData.proj3),
+      avrg_proj: studentData.avrg_proj,
+
+      final: studentData.final,
+      predicate: studentData.predicate,
+      description: studentData.description,
+    };
+
+    try {
+      setLoading(true);
+      const response = await axios.post(
+        `${API_BASE_URL}/report-skill`,
+        payload
+      );
+
+      if (response.data?.id) {
+        setStudentsData((prev) =>
+          prev.map((s) =>
+            s.student_id === studentData.student_id
+              ? { ...s, id: response.data.id }
+              : s
+          )
+        );
+      }
+
+      toast.success(
+        `✅ Nilai ${studentData.fullname} berhasil ${
+          studentData.id ? "diperbarui" : "disimpan"
+        }!`
+      );
+    } catch (error: any) {
+      console.error("Submission failed:", error.response?.data || error);
+      // Tampilkan error yang lebih spesifik jika ada dari server
+      const errorMessage =
+        error.response?.data?.message || error.response?.data?.errors
+          ? error.response.data.message ||
+            Object.values(error.response.data.errors).flat().join(", ")
+          : "Error koneksi/server yang tidak diketahui.";
+
+      toast.error(
+        `❌ Gagal menyimpan nilai ${studentData.fullname}: ${errorMessage}`
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 4. Table Columns (Input Form)
+  const columns: ColumnsType<ReportSkillData> = useMemo(
     () => [
       {
-        title: "No",
-        key: "index",
-        width: 50,
+        title: "Full Name",
+        dataIndex: "fullname",
+        key: "fullname",
         fixed: "left",
-        align: "center",
-        render: (_, __, index) => index + 1,
-      },
-      {
-        title: "Nama Siswa",
-        dataIndex: "fullName",
-        key: "fullName",
-        fixed: "left", // Kolom tetap di kiri saat scroll
         width: 200,
+        render: (text) => <Text strong>{text}</Text>,
       },
+      // --- Grouping: Performance ---
       {
-        title: "Kinerja (Perf)",
-        key: "perf",
+        title: "Performance",
         children: [
           {
-            title: "P1",
-            dataIndex: ["perf", 0],
+            title: "Perf1",
             key: "perf1",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.perf[0]}
-                dataIndex="perf"
-                index={0}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "perf1"),
           },
           {
-            title: "P2",
-            dataIndex: ["perf", 1],
+            title: "Perf2",
             key: "perf2",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.perf[1]}
-                dataIndex="perf"
-                index={1}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "perf2"),
           },
           {
-            title: "P3",
-            dataIndex: ["perf", 2],
+            title: "Perf3",
             key: "perf3",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.perf[2]}
-                dataIndex="perf"
-                index={2}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "perf3"),
           },
           {
-            title: "Avrg",
-            dataIndex: "perfAvrg",
-            key: "perfAvrg",
-            align: "center",
+            title: "AvgR",
+            dataIndex: "avrg_perf",
+            key: "AvgR_Perf",
             width: 70,
-            className: "average-cell",
-            render: (text) => <Text strong>{text || "-"}</Text>,
+            align: "center",
+            className: "avg-column",
           },
         ],
       },
+      // --- Grouping: Production ---
       {
-        title: "Produk (Prod)",
-        key: "prod",
+        title: "Production",
         children: [
           {
-            title: "P1",
-            dataIndex: ["prod", 0],
+            title: "Prod1",
             key: "prod1",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.prod[0]}
-                dataIndex="prod"
-                index={0}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "prod1"),
           },
           {
-            title: "P2",
-            dataIndex: ["prod", 1],
+            title: "Prod2",
             key: "prod2",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.prod[1]}
-                dataIndex="prod"
-                index={1}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "prod2"),
           },
           {
-            title: "P3",
-            dataIndex: ["prod", 2],
+            title: "Prod3",
             key: "prod3",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.prod[2]}
-                dataIndex="prod"
-                index={2}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "prod3"),
           },
           {
-            title: "Avrg",
-            dataIndex: "prodAvrg",
-            key: "prodAvrg",
-            align: "center",
+            title: "AvgR",
+            dataIndex: "avrg_prod",
+            key: "AvgR_Prod",
             width: 70,
-            className: "average-cell",
-            render: (text) => <Text strong>{text || "-"}</Text>,
+            align: "center",
+            className: "avg-column",
           },
         ],
       },
+      // --- Grouping: Project ---
       {
-        title: "Proyek (Proj)",
-        key: "proj",
+        title: "Project",
         children: [
           {
-            title: "P1",
-            dataIndex: ["proj", 0],
+            title: "Proj1",
             key: "proj1",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.proj[0]}
-                dataIndex="proj"
-                index={0}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "proj1"),
           },
           {
-            title: "P2",
-            dataIndex: ["proj", 1],
+            title: "Proj2",
             key: "proj2",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.proj[1]}
-                dataIndex="proj"
-                index={1}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "proj2"),
           },
           {
-            title: "P3",
-            dataIndex: ["proj", 2],
+            title: "Proj3",
             key: "proj3",
-            align: "center",
             width: 70,
-            render: (text, record) => (
-              <EditableCell
-                value={record.proj[2]}
-                dataIndex="proj"
-                index={2}
-                record={record}
-                onChange={handleValueChange}
-              />
-            ),
+            align: "center",
+            render: (_, record, index) => renderInput(index, "proj3"),
           },
           {
-            title: "Avrg",
-            dataIndex: "projAvrg",
-            key: "projAvrg",
-            align: "center",
+            title: "AvgR",
+            dataIndex: "avrg_proj",
+            key: "AvgR_Proj",
             width: 70,
-            className: "average-cell",
-            render: (text) => <Text strong>{text || "-"}</Text>,
+            align: "center",
+            className: "avg-column",
           },
         ],
       },
+      // --- Final Data ---
       {
-        title: "Nilai Akhir",
+        title: "Final",
         dataIndex: "final",
-        key: "final",
+        key: "Final",
+        width: 70,
         align: "center",
-        width: 90,
-        className: "average-cell",
-        render: (text) => (
-          <Text strong type="danger">
-            {text || "-"}
-          </Text>
-        ),
       },
       {
-        title: "Predikat",
+        title: "Predicate",
         dataIndex: "predicate",
-        key: "predicate",
+        key: "Predicate",
+        width: 90,
         align: "center",
-        width: 80,
-        className: "average-cell",
-        render: (text) => <Text strong>{text || "-"}</Text>,
       },
+      { title: "Desc", dataIndex: "description", key: "Desc", width: 100 },
       {
-        title: "Deskripsi",
-        dataIndex: "desc",
-        key: "desc",
-        align: "center",
-        width: 150,
-        className: "average-cell",
-        render: (text) => <Text>{text || "-"}</Text>,
-      },
-      {
-        title: "Aksi",
-        key: "actions",
-        fixed: "right", // Kolom tetap di kanan saat scroll
-        width: 120,
-        align: "center",
+        title: "Actions",
+        key: "Actions",
+        fixed: "right",
+        width: 100,
         render: (_, record) => (
           <Button
-            type="primary"
-            onClick={() => handleAction(record)}
-            loading={submittingStudentId === record.studentId}
-            disabled={submittingStudentId !== null}
-            style={{ width: "100px" }}
+            type={record.id ? "default" : "primary"}
+            size="small"
+            onClick={() => handleSaveScore(record)}
+            loading={loading}
           >
-            {record.predicate === "" ? "Simpan" : "Update"}
+            {record.id ? "Update" : "Submit"}
           </Button>
         ),
       },
     ],
-    [handleValueChange, handleAction, submittingStudentId]
+    [loading, studentsData, subject]
   );
 
-  // ===================================
-  // 6. RENDER KONDISIONAL (LOADING/ERROR)
-  // ===================================
-
-  if (loading && !apiError) {
+  // Input Render Function
+  const renderInput = (index: number, field: keyof ReportSkillData) => {
     return (
-      <Layout style={{ padding: "24px", minHeight: "100vh" }}>
-        <Spin tip="Memuat Data Siswa dan Subjek..." size="large">
-          <Alert
-            message="Sedang memuat data dari API..."
-            description={`Memuat data mata pelajaran (ID: ${subjectId}) dan siswa dari Kelas (ID: ${classroomId}).`}
-            type="info"
-            showIcon
-          />
-        </Spin>
-      </Layout>
-    );
-  }
-
-  if (apiError) {
-    return (
-      <Layout style={{ padding: "24px", minHeight: "100vh" }}>
-        <Alert
-          message="Error Saat Memuat Data"
-          description={`Gagal mengambil data dari API: ${apiError}. Pastikan API sudah berjalan dan parameter URL (Subject ID/Classroom ID) valid.`}
-          type="error"
-          showIcon
+      <Form.Item
+        name={`${index}_${field}`}
+        noStyle
+        rules={[
+          {
+            pattern: /^(100|[1-9]?[0-9])$/,
+            message: "",
+          },
+        ]}
+      >
+        <Input
+          type="number"
+          min={0}
+          max={100}
+          style={{ width: "100%", textAlign: "center" }}
+          onChange={handleScoreChange}
+          className="score-input-no-spin"
         />
+      </Form.Item>
+    );
+  };
+
+  if (loading && studentsData.length === 0) {
+    return (
+      <Layout style={{ padding: 24, background: "#fff", minHeight: "100vh" }}>
+        <Spin tip="Memuat data nilai dan siswa..." size="large" />
       </Layout>
     );
   }
 
-  // ===================================
-  // 7. RENDER UTAMA
-  // ===================================
+  const semesterName = getSemesterName(academicYear);
+  const academicYearText = academicYear
+    ? `${academicYear.year} (${semesterName})`
+    : "N/A";
+  const subjectName = subject?.name || "Mata Pelajaran";
+  const grade = subject?.grade || "-";
 
   return (
-    <Layout
-      style={{ padding: "24px", backgroundColor: "#fff", minHeight: "100vh" }}
-    >
-      <ToastContainer position="top-right" autoClose={3000} />
+    <Layout style={{ padding: "24px 0", background: "#fff" }}>
+      {/* Header Halaman */}
+      <Header
+        style={{
+          background: "#fff",
+          padding: 0,
+          height: "auto",
+          marginBottom: 24,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{ paddingLeft: 24 }}>
+            <Text type="secondary">Home / Academic Report / Skills Input</Text>
+            <Title level={1} style={{ margin: "8px 0 0 0" }}>
+              Skills Input
+            </Title>
+          </div>
+          <Title level={2} style={{ margin: "16px 24px 0 0", color: "#555" }}>
+            {academicYearText}
+          </Title>
+        </div>
+        <Title level={4} style={{ margin: "16px 24px 0 24px" }}>
+          Subject : {subjectName} (Grade: {grade} | Class ID: {classroomId})
+        </Title>
+      </Header>
 
-      {/* Gaya CSS untuk tampilan tabel */}
-      <style jsx global>{`
-        .average-cell {
-          background-color: #f0f0f0 !important;
+      <hr
+        style={{
+          border: "none",
+          borderTop: "1px solid #f0f0f0",
+          margin: "0 24px 24px 24px",
+        }}
+      />
+
+      {/* Konten Form dan Tabel */}
+      <Content style={{ padding: "0 24px", minHeight: 280 }}>
+        <Form form={form} initialValues={{}} layout="inline">
+          <Table<ReportSkillData>
+            columns={columns}
+            dataSource={studentsData.map((data, index) => ({
+              ...data,
+              key: index,
+            }))}
+            bordered
+            pagination={false}
+            scroll={{ x: 1500 }}
+            size="middle"
+            loading={loading}
+            className="skills-input-table"
+          />
+        </Form>
+      </Content>
+
+      {/* --- Styling Khusus (Menyembunyikan Tombol Spin Input) --- */}
+      <style global jsx>{`
+        /* Styling untuk membuat kolom AvgR berwarna abu-abu muda */
+        .skills-input-table .ant-table-thead .avg-column,
+        .skills-input-table .ant-table-tbody .avg-column {
+          background-color: #f7f7f7 !important;
           font-weight: bold;
         }
-        .ant-table-wrapper .ant-table-thead > tr > th.average-cell {
-          background-color: #e6e6e6 !important;
+
+        /* Styling header */
+        .skills-input-table .ant-table-thead > tr > th {
+          text-align: center;
         }
-        .ant-table-cell .ant-input,
-        .ant-table-cell .ant-input-number {
-          padding: 4px 8px;
-          height: 32px;
-          border-radius: 6px;
+
+        /* Layouting Form di dalam tabel */
+        .skills-input-table .ant-form-item {
+          margin-bottom: 0 !important;
         }
-        /* Menyembunyikan spinner pada InputNumber untuk tampilan yang lebih rapi */
-        .hide-number-spinner::-webkit-outer-spin-button,
-        .hide-number-spinner::-webkit-inner-spin-button {
+
+        /* CSS untuk MENYEMBUNYIKAN TOMBOL SPIN */
+        .score-input-no-spin::-webkit-outer-spin-button,
+        .score-input-no-spin::-webkit-inner-spin-button {
           -webkit-appearance: none;
           margin: 0;
         }
-        .hide-number-spinner {
-          -moz-appearance: textfield;
+        .score-input-no-spin[type="number"] {
+          -moz-appearance: textfield; /* Firefox */
+          text-align: center;
+          padding: 4px 8px !important;
         }
       `}</style>
-
-      <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-        <Header style={{ backgroundColor: "#fff", padding: 0, height: "auto" }}>
-          <Space direction="vertical" size={4} style={{ display: "flex" }}>
-            <Text type="secondary" style={{ fontSize: "14px" }}>
-              Home / Academic Report / Skills Input
-            </Text>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <Title
-                level={1}
-                style={{ margin: 0, fontSize: "30px", fontWeight: "bold" }}
-              >
-                Input Nilai Keterampilan
-              </Title>
-              <Title
-                level={2}
-                style={{ margin: 0, fontSize: "24px", fontWeight: "normal" }}
-              >
-                {academicInfo.year} ({academicInfo.semester})
-              </Title>
-            </div>
-          </Space>
-          <Divider style={{ margin: "16px 0 8px 0" }} />
-        </Header>
-
-        <Text strong style={{ fontSize: "18px" }}>
-          Subject: {subjectName}
-        </Text>
-
-        <Content>
-          {/* Bagian Keterangan Predikat/KKM */}
-          <Title level={4} style={{ marginTop: "16px" }}>
-            Keterangan Predikat:
-          </Title>
-          <Space wrap>
-            {predicates
-              .sort((a, b) => b.min_value - a.min_value)
-              .map((p) => (
-                <Text key={p.id} code>
-                  {p.predicate} ({p.min_value}-{p.max_value}): {p.descriptive}
-                </Text>
-              ))}
-          </Space>
-          <Divider style={{ margin: "8px 0 16px 0" }} />
-
-          {/* Tabel Input Nilai */}
-          <Table
-            columns={columns}
-            dataSource={studentData}
-            rowKey="key"
-            bordered
-            pagination={false}
-            size="small"
-            scroll={{ x: 1300 }} // Mengaktifkan scroll horizontal
-            style={{ marginTop: "8px" }}
-            locale={{
-              emptyText: "Tidak ada data siswa dalam kelas ini.", // Pesan jika data kosong
-            }}
-          />
-        </Content>
-      </Space>
     </Layout>
   );
 };
