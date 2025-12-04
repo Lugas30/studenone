@@ -312,6 +312,24 @@ const items: MenuItem[] = [
       "/download-or-print-pid"
     ),
   ]),
+  // Submenu: Academic Report
+  getItem(
+    "Academic Report",
+    "preview-download-academic-report",
+    <FileTextOutlined />,
+    [
+      getItem(
+        <Link href="/academic-report/preview-detail-academic">
+          Access & Preview
+        </Link>,
+        "/academic-report/preview-detail-academic"
+      ),
+      getItem(
+        <Link href="/download-or-print-academic">Download or Print</Link>,
+        "/download-or-print-academic"
+      ),
+    ]
+  ),
 ];
 
 // --- KOMPONEN UTAMA (TETAP SAMA) ---
