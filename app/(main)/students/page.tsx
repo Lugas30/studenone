@@ -803,7 +803,7 @@ const StudentList: React.FC = () => {
             <Form.Item
               name="date_of_birth"
               label="Date of Birth"
-              rules={[{ required: true, message: "Wajib diisi!" }]}
+              // rules={[{ required: true, message: "Wajib diisi!" }]}
             >
               <DatePicker
                 style={{ width: "100%" }}

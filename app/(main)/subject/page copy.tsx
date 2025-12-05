@@ -14,7 +14,6 @@ import {
   Form,
   InputNumber,
   Select,
-  Upload, // Import komponen Upload dari Ant Design
 } from "antd";
 import {
   SearchOutlined,
@@ -24,14 +23,12 @@ import {
   UploadOutlined,
   EyeOutlined,
   LoadingOutlined,
-  FileExcelOutlined, // Ikon untuk template Excel
 } from "@ant-design/icons";
 import axios from "axios";
-import * as XLSX from "xlsx"; // Import library sheetjs untuk membuat file Excel
 
 // *** IMPOR REACT TOASTIFY ***
 import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import "react-toastify/dist/ReactToastify.css"; // Wajib impor CSS-nya
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -40,8 +37,6 @@ const { Option } = Select;
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://so-api.queensland.id/api";
 const SUBJECTS_ENDPOINT = `${API_URL}/subjects`;
-// API untuk import file massal
-const IMPORT_SUBJECTS_ENDPOINT = `${API_URL}/subject/import`;
 const PAGE_SIZE = 10;
 
 // --- INTERFACE DATA API ---
@@ -193,16 +188,11 @@ const SubjectPage: React.FC = () => {
   );
   const [form] = Form.useForm();
 
-  // --- 💡 STATE BARU UNTUK MODAL MASS UPLOAD ---
-  const [isMassUploadModalVisible, setIsMassUploadModalVisible] =
-    useState(false);
-  const [fileList, setFileList] = useState<any[]>([]);
-  // ---------------------------------------------
-
   // --- 1. FUNGSI FETCH DATA (GET) ---
   const fetchSubjects = useCallback(async (page: number = 1) => {
     setLoading(true);
     try {
+      // 💡 Perubahan: Mengubah tipe data respons menjadi ApiResponse
       const response = await axios.get<ApiResponse>(SUBJECTS_ENDPOINT, {
         params: {
           page: page,
@@ -210,6 +200,7 @@ const SubjectPage: React.FC = () => {
         },
       });
 
+      // 💡 Perubahan: Mengambil 'academicYear' dan 'data' dari properti tingkat atas
       const { academicYear, data } = response.data;
 
       const apiData: ApiSubject[] = Array.isArray(data) ? data : [];
@@ -226,6 +217,7 @@ const SubjectPage: React.FC = () => {
         genapActive: item.is_genap,
       }));
 
+      // 💡 Perubahan: Menggunakan academicYear dari properti tingkat atas
       const activeYearDisplay =
         academicYear || "Tahun Akademik Tidak Ditemukan";
 
@@ -233,13 +225,14 @@ const SubjectPage: React.FC = () => {
       setPagination((prev) => ({
         ...prev,
         currentPage: page,
-        // Di sini diasumsikan totalRecords adalah jumlah data yang dimuat,
-        // namun idealnya perlu mendapatkan total dari metadata respons API.
-        totalRecords: transformedData.length * 2, // Contoh: Menjaga total agar pagination terlihat
+        // Catatan: Jika backend sudah menerapkan pagination,
+        // Anda perlu mengganti totalRecords dengan nilai dari metadata respons.
+        totalRecords: transformedData.length,
         academicYear: activeYearDisplay,
       }));
     } catch (error) {
       console.error("Gagal mengambil data mata pelajaran:", error);
+      // *** GANTI: message.error -> toast.error ***
       toast.error("Gagal memuat data mata pelajaran. Cek koneksi API.");
     } finally {
       setLoading(false);
@@ -271,11 +264,13 @@ const SubjectPage: React.FC = () => {
         value: value,
       });
 
+      // *** GANTI: message.success -> toast.success ***
       toast.success(
         response.data.message || "Status semester berhasil diubah."
       );
     } catch (error: any) {
       // Rollback jika gagal
+      // *** GANTI: message.error -> toast.error ***
       toast.error(
         error.response?.data?.message || `Gagal mengubah status ${field}.`
       );
@@ -326,6 +321,7 @@ const SubjectPage: React.FC = () => {
         response = await axios.post(SUBJECTS_ENDPOINT, payload);
       }
 
+      // *** GANTI: message.success -> toast.success ***
       toast.success(
         response.data.message ||
           `Subject ${editingSubject ? "Updated" : "Created"} Successfully`
@@ -335,6 +331,7 @@ const SubjectPage: React.FC = () => {
       fetchSubjects(pagination.currentPage);
     } catch (error: any) {
       console.error("Gagal submit form:", error);
+      // *** GANTI: message.error -> toast.error ***
       toast.error(
         error.response?.data?.message ||
           "Terjadi kesalahan saat menyimpan data."
@@ -342,93 +339,6 @@ const SubjectPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // --- 💡 FUNGSI MASS UPLOAD ---
-
-  // 4. Fungsi Download Template
-  const handleDownloadTemplate = () => {
-    // Definisi kolom template sesuai image
-    const data = [
-      {
-        "KODE MAPEL": "MP001",
-        "NAMA MAPEL": "Matematika",
-        KATEGORI: "Kelompok A",
-        KELAS: 1,
-        KKM: 75,
-      },
-      {
-        "KODE MAPEL": "MP002",
-        "NAMA MAPEL": "Bahasa Indonesia",
-        KATEGORI: "Kelompok A",
-        KELAS: 1,
-        KKM: 75,
-      },
-      {
-        "KODE MAPEL": "MP003",
-        "NAMA MAPEL": "Bahasa Sunda",
-        KATEGORI: "Kelompok B",
-        KELAS: 1,
-        KKM: 70,
-      },
-      // Sisanya baris kosong untuk memudahkan pengguna mengisi
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Subjects");
-
-    // Buat file Subjects.xlsx
-    XLSX.writeFile(workbook, "Subjects.xlsx");
-
-    toast.info("Template Subjects.xlsx berhasil diunduh.");
-  };
-
-  // 5. Props untuk Komponen Upload
-  const uploadProps = {
-    accept: ".xlsx",
-    maxCount: 1,
-    fileList,
-    onRemove: () => {
-      setFileList([]);
-    },
-    beforeUpload: (file: File) => {
-      setFileList([file]);
-      return false; // Mencegah upload otomatis Ant Design
-    },
-    // Fungsi customUpload untuk memanggil API
-    customRequest: async (options: any) => {
-      const { file, onSuccess, onError } = options;
-      setLoading(true);
-      const formData = new FormData();
-      formData.append("file", file); // Key 'file' harus sesuai dengan API
-
-      try {
-        const response = await axios.post(IMPORT_SUBJECTS_ENDPOINT, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        });
-
-        toast.success(
-          response.data.message || "Data mata pelajaran berhasil diimpor!"
-        );
-        onSuccess(response.data, file);
-        setIsMassUploadModalVisible(false); // Tutup modal
-        setFileList([]); // Kosongkan list file
-        fetchSubjects(1); // Refresh data
-      } catch (error: any) {
-        console.error("Gagal Upload File:", error);
-        toast.error(
-          error.response?.data?.message ||
-            "Gagal mengimpor data. Pastikan format file sudah benar."
-        );
-        onError(error);
-        setFileList([]);
-      } finally {
-        setLoading(false);
-      }
-    },
   };
 
   // --- RENDERING KOLOM DENGAN HANDLER ---
@@ -441,7 +351,7 @@ const SubjectPage: React.FC = () => {
 
   return (
     <>
-      {/* *** TOASTCONTAINER *** */}
+      {/* *** TAMBAHKAN TOASTCONTAINER DI ROOT KOMPONEN *** */}
       <ToastContainer
         position="top-right"
         autoClose={3000}
@@ -470,6 +380,7 @@ const SubjectPage: React.FC = () => {
           Subject
         </Title>
         <Title level={3} style={{ color: "#888", margin: 0 }}>
+          {/* Tahun akademik sekarang menggunakan state dari properti tingkat atas */}
           <span className="font-bold text-zinc-800">
             {pagination.academicYear}
           </span>
@@ -490,16 +401,13 @@ const SubjectPage: React.FC = () => {
           style={{ width: 300 }}
         />
         <Space>
-          {/* *** TOMBOL MASS UPLOAD BARU *** */}
           <Button
             type="primary"
             icon={<UploadOutlined />}
             style={{ background: "#52c41a", borderColor: "#52c41a" }}
-            onClick={() => setIsMassUploadModalVisible(true)} // Tampilkan modal
           >
             Mass Upload
           </Button>
-          {/* ******************************* */}
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -524,7 +432,6 @@ const SubjectPage: React.FC = () => {
         style={{ border: "1px solid #f0f0f0", borderRadius: "4px" }}
         scroll={{ x: 800 }}
       />
-      <hr />
 
       {/* 5. Pagination & Controls */}
       <div
@@ -634,73 +541,6 @@ const SubjectPage: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-
-      {/* *** MODAL MASS UPLOAD BARU *** */}
-      <Modal
-        title="Mass Upload Subjects (.xlsx)"
-        open={isMassUploadModalVisible}
-        onCancel={() => {
-          setIsMassUploadModalVisible(false);
-          setFileList([]); // Reset file list saat modal ditutup
-        }}
-        footer={[
-          <Button
-            key="back"
-            onClick={() => {
-              setIsMassUploadModalVisible(false);
-              setFileList([]);
-            }}
-          >
-            Cancel
-          </Button>,
-          <Button
-            key="submit"
-            type="primary"
-            onClick={() => {
-              // Panggil customRequest secara manual
-              if (fileList.length > 0 && fileList[0]) {
-                uploadProps.customRequest({
-                  file: fileList[0],
-                  onSuccess: () => {},
-                  onError: () => {},
-                });
-              } else {
-                toast.warn("Silakan pilih file untuk diunggah.");
-              }
-            }}
-            loading={loading}
-            disabled={fileList.length === 0}
-          >
-            {loading ? "Uploading..." : "Upload File"}
-          </Button>,
-        ]}
-      >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <Typography.Paragraph>
-            Pastikan file Excel yang Anda upload memiliki format tabel yang
-            sesuai (KODE MAPEL, NAMA MAPEL, KATEGORI, KELAS, KKM).
-          </Typography.Paragraph>
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={handleDownloadTemplate}
-            type="dashed"
-            block
-          >
-            Download Template Subjects.xlsx
-          </Button>
-          <Upload {...uploadProps}>
-            <Button icon={<UploadOutlined />} disabled={fileList.length > 0}>
-              Select .xlsx File to Upload
-            </Button>
-          </Upload>
-          {fileList.length > 0 && (
-            <Typography.Text type="secondary">
-              Selected file: **{fileList[0].name}**
-            </Typography.Text>
-          )}
-        </Space>
-      </Modal>
-      {/* ******************************* */}
     </>
   );
 };
