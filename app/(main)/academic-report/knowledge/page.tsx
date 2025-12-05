@@ -390,8 +390,12 @@ const KnowledgePage: React.FC = () => {
 
       {/* Class Indicator Title */}
       <Title level={4} style={{ marginBottom: 24 }}>
-        Kelas Terpilih:{" "}
-        <Text strong type={currentClassroom ? undefined : "secondary"}>
+        Class:{" "}
+        <Text
+          style={{ fontSize: 20 }}
+          strong
+          type={currentClassroom ? undefined : "secondary"}
+        >
           {currentClassroom
             ? `${currentClassroom.class_name} (${currentClassroom.code})`
             : "Belum Ada Kelas Terpilih"}

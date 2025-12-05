@@ -134,11 +134,11 @@ const KnowledgeInputPage: React.FC = () => {
   const parsedSubjectId = useMemo(() => parseInt(subjectId), [subjectId]);
   const parsedClassroomId = useMemo(() => parseInt(classroomId), [classroomId]);
 
-  // --- FUNGSI UTILITY: MENGHITUNG ULANG PERFORMA (DISESUAIKAN) ---
+  // --- FUNGSI UTILITY: MENGHITUNG ULANG PERFORMA ---
 
   /**
    * Hitung ulang rata-rata dan predikat setelah input nilai.
-   * Menggunakan bobot: UH 40% + T 20% + UTS 20% + UAS 20%
+   * Fungsi ini sekarang menerima 'predicates' sebagai argumen untuk memutus dependency loop.
    */
   const recalculatePerformance = useCallback(
     (
@@ -166,22 +166,18 @@ const KnowledgeInputPage: React.FC = () => {
         };
       }
 
-      // 1. Hitung Rata-rata Ulangan Harian (UH) dan Tugas (T)
       const uhValues = [data.uh1, data.uh2, data.uh3, data.uh4];
-      const uhAvrg = calculateAvg(uhValues); // Rata-rata UH
+      const uhAvrg = calculateAvg(uhValues);
 
       const tValues = [data.t1, data.t2];
-      const tAvrg = calculateAvg(tValues); // Rata-rata Tugas
+      const tAvrg = calculateAvg(tValues);
 
-      // 2. HITUNG NILAI AKHIR MENGGUNAKAN BOBOT BARU
-      // Rumus: (UH Avrg * 0.4) + (T Avrg * 0.2) + (UTS * 0.2) + (UAS * 0.2)
-      const finalScoreRaw =
-        uhAvrg * 0.4 + tAvrg * 0.2 + data.uts * 0.2 + data.uas * 0.2;
+      const finalValues = [uhAvrg, tAvrg, data.uts, data.uas].filter(
+        (v) => v > 0
+      );
+      const finalScore = calculateAvg(finalValues);
 
-      // Bulatkan ke bilangan bulat terdekat
-      const finalScore = Math.round(finalScoreRaw);
-
-      // 3. Tentukan Predikat dan Deskripsi
+      // Gunakan currentPredicates yang dikirim sebagai argumen
       const { predicate, description } = getPredicateByScore(
         finalScore,
         currentPredicates
@@ -418,6 +414,7 @@ const KnowledgeInputPage: React.FC = () => {
   };
 
   // --- DEFINISI KOLOM TABEL (useMemo) ---
+  // ... (Kolom tabel tidak berubah dari versi sebelumnya)
   const columns: ColumnsType<StudentPerformance> = useMemo(
     () => [
       {
@@ -755,6 +752,11 @@ const KnowledgeInputPage: React.FC = () => {
           Subject: {subjectInfo?.name || "Loading..."} (KKM:{" "}
           {subjectInfo?.kkm || "-"})
         </Text>
+
+        {/* Keperluan Testing */}
+        {/* <Text type="secondary">
+          Kelas ID: **{classroomId}**, Subjek ID: **{subjectId}**
+        </Text> */}
 
         <Content>
           <Table

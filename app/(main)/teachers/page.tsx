@@ -737,10 +737,10 @@ const TeachersPage: React.FC = () => {
           }}
         >
           <Title level={2} style={{ margin: 0 }}>
-            <UserAddOutlined /> Teacher Management
+            Teacher Management
           </Title>
-          <Title level={3} style={{ margin: 0, color: "#1890ff" }}>
-            Year: **{currentAcademicYear}**
+          <Title level={3} style={{ margin: 0 }}>
+            {currentAcademicYear}
           </Title>
         </div>
 
