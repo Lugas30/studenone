@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react"; // Gunakan "react" yang benar
 import {
   Table,
   Input,
@@ -15,7 +15,6 @@ import {
   DatePicker,
   Select,
   Descriptions,
-  Upload,
 } from "antd";
 import {
   EyeOutlined,
@@ -25,25 +24,23 @@ import {
   PlusOutlined,
   DownOutlined,
   SearchOutlined,
-  FileExcelOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { ToastContainer, toast } from "react-toastify";
-import * as XLSX from "xlsx";
-import type { UploadProps } from "antd";
-import axios from "axios";
 
 const { Title } = Typography;
 const { Option } = Select;
 
-// Menggunakan API_URL dari env dan mendefinisikan endpoint
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-const STUDENTS_BASE_URL = `${API_URL}/students`;
-const IMPORT_STUDENTS_ENDPOINT = `${STUDENTS_BASE_URL}/import`;
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // --- 1. Definisi Tipe Data ---
 
+interface AcademicYear {
+  id: number;
+  year: string;
+  is_active: boolean;
+}
 interface Student {
   key: string;
   id: number;
@@ -54,7 +51,8 @@ interface Student {
   join_date: string;
   addmission_type: "regular" | "transfer_in" | "transfer_out" | "drop_out";
   is_active: boolean;
-  academic_year: string;
+  // academic_year: AcademicYear; // Tetap pertahankan tipe ini jika ini adalah struktur data dari API /students/{id}
+  academic_year: string; // ⭐️ PERBAIKAN: Mengganti ke string untuk kemudahan (Asumsi API utama mengembalikan string '2023/2024')
   username: string;
   place_birth: string;
   date_of_birth: string;
@@ -95,7 +93,7 @@ type UserStatus =
   | "Graduate";
 
 // --- 2. Fungsi Utility untuk Status Mapping dan Tag ---
-
+// (Tidak ada perubahan pada bagian ini)
 const getDisplayStatus = (
   addmissionType: Student["addmission_type"],
   isActive: boolean
@@ -147,6 +145,7 @@ const getStatusTag = (
 };
 
 // --- 3. Komponen Detail Siswa ---
+// (Tidak ada perubahan pada bagian ini, kecuali jika ingin menyesuaikan tampilan detail)
 
 const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
   const admissionTypeDisplay = student.addmission_type
@@ -161,6 +160,7 @@ const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
 
   return (
     <div style={{ padding: "0 5px" }}>
+      {/* Bagian Status Utama */}
       <Descriptions
         title="Status Keaktifan"
         bordered
@@ -175,6 +175,8 @@ const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
           {student.notes || "Tidak ada catatan terkait perubahan status."}
         </Descriptions.Item>
       </Descriptions>
+
+      {/* 1. Informasi Identitas Siswa */}
       <Descriptions
         title="Informasi Identitas Siswa"
         bordered
@@ -195,6 +197,8 @@ const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
         </Descriptions.Item>
         <Descriptions.Item label="Agama">{student.religion}</Descriptions.Item>
       </Descriptions>
+
+      {/* 2. Informasi Kelahiran dan Domisili */}
       <Descriptions
         title="Informasi Kelahiran & Domisili"
         bordered
@@ -212,6 +216,8 @@ const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
           {student.contact || "-"}
         </Descriptions.Item>
       </Descriptions>
+
+      {/* 3. Informasi Akademik dan Asal Sekolah */}
       <Descriptions
         title="Informasi Akademik"
         bordered
@@ -233,6 +239,8 @@ const StudentDetailView: React.FC<{ student: Student }> = ({ student }) => {
           {student.sekolah_asal || "Tidak Tercatat"}
         </Descriptions.Item>
       </Descriptions>
+
+      {/* 4. Informasi Orang Tua */}
       <Descriptions
         title="Informasi Orang Tua"
         bordered
@@ -258,6 +266,7 @@ const StudentList: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState("");
 
+  // ⭐️ PERBAIKAN: Inisialisasi state untuk Tahun Akademik
   const [academicYear, setAcademicYear] = useState("Loading...");
 
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
@@ -266,40 +275,39 @@ const StudentList: React.FC = () => {
   const [formType, setFormType] = useState<"add" | "edit">("add");
   const [form] = Form.useForm();
 
-  // State untuk Mass Upload
-  const [isMassUploadModalVisible, setIsMassUploadModalVisible] =
-    useState(false);
-  const [fileList, setFileList] = useState<any[]>([]);
-
-  // --- 5. Fungsi Interaksi API & Handler Utama ---
+  // --- 5. Fungsi Interaksi API ---
 
   const fetchStudents = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${STUDENTS_BASE_URL}`);
+      const response = await fetch(`${API_URL}/students`);
       if (!response.ok)
         throw new Error(`HTTP error! status: ${response.status}`);
 
+      // ⭐️ PERBAIKAN DARI ERROR: Baca respons JSON sepenuhnya.
       const responseJson = await response.json();
 
+      // ⭐️ PERBAIKAN 1: Ambil academicYear dari root response
       const apiAcademicYear =
         responseJson.academicYear || "Data Tahun Tidak Ditemukan";
-      setAcademicYear(apiAcademicYear);
+      setAcademicYear(apiAcademicYear); // Simpan tahun akademik ke state
 
+      // Asumsikan array siswa berada di properti 'data'.
       const apiData: Omit<Student, "key">[] = responseJson.data || [];
 
       const processedData: Student[] = apiData.map((student) => ({
+        // ⭐️ PERBAIKAN 2: Asumsi jika student tidak memiliki academic_year, gunakan yang diambil dari root
         ...student,
         key: student.id.toString(),
         gender: student.gender as "male" | "female",
-        academic_year: student.academic_year,
+        academic_year: student.academic_year, // Jika API /students mengembalikan data ini, gunakan, jika tidak, Anda mungkin perlu mengisinya
       }));
 
       setData(processedData);
       setInitialData(processedData);
     } catch (error) {
       console.error("Error fetching students:", error);
-      setAcademicYear("Error Loading Year");
+      setAcademicYear("Error Loading Year"); // Perbarui state jika terjadi error
       // toast.error("Gagal mengambil data siswa.");
     } finally {
       setLoading(false);
@@ -312,7 +320,7 @@ const StudentList: React.FC = () => {
 
   const handleAddStudent = async (payload: StudentPayload) => {
     try {
-      const response = await fetch(`${STUDENTS_BASE_URL}`, {
+      const response = await fetch(`${API_URL}/students`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -337,7 +345,7 @@ const StudentList: React.FC = () => {
     payload: Partial<StudentPayload>
   ) => {
     try {
-      const response = await fetch(`${STUDENTS_BASE_URL}/${studentId}`, {
+      const response = await fetch(`${API_URL}/students/${studentId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -357,110 +365,7 @@ const StudentList: React.FC = () => {
     }
   };
 
-  // --- FUNGSI SEARCH ---
-  const handleSearch = (value: string) => {
-    setSearchText(value);
-    const lowercasedValue = value.toLowerCase();
-
-    if (lowercasedValue) {
-      const filteredData = initialData.filter(
-        (student) =>
-          student.fullname.toLowerCase().includes(lowercasedValue) ||
-          student.nis.toLowerCase().includes(lowercasedValue) ||
-          student.nisn.toLowerCase().includes(lowercasedValue)
-      );
-      setData(filteredData);
-    } else {
-      setData(initialData);
-    }
-  };
-
-  // --- FUNGSI MASS UPLOAD SISWA ---
-
-  const handleDownloadTemplate = () => {
-    // 💡 Menggunakan Header yang telah disesuaikan dengan image_a55204.png
-    const data = [
-      {
-        NIS: "10000",
-        NISN: "20000",
-        "NAMA LENGKAP": "Wanda Rahayu",
-        "NAMA PANGGIL": "Lia", // Diperbarui
-        "TEMPAT LAHIR": "Surabaya",
-        "TANGGAL LAHIR": "2006-09-30", // Format YYYY-MM-DD
-        "JENIS KELAMIN": "Perempuan", // Format "Laki-laki" atau "Perempuan"
-        AGAMA: "Islam",
-        ALAMAT: "Jl. Raya No. 47, Bandung",
-        KONTAK: "081238959300",
-        "NAMA IBU KANDUNG": "Dwi Damayanti", // Diperbarui
-        "NAMA AYAH KANDUNG": "Adi Kusumo", // Diperbarui
-        "SEKOLAH ASAL": "Sekolah A", // Diperbarui
-        "NO IJAZAH": "UL12000", // Diperbarui
-        "TANGGAL MASUK": "2023-09-04", // Diperbarui: Format YYYY-MM-DD
-        "JENIS PENDAFTARAN": "regular", // Diperbarui: regular/transfer_in/transfer_out/drop_out
-        CATATAN: "Reguler",
-      },
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
-
-    // Ganti nama file agar lebih jelas
-    XLSX.writeFile(workbook, "students_import_template.xlsx");
-
-    toast.info("Template students_import_template.xlsx berhasil diunduh.");
-  };
-
-  const handleMassUpload = async (file: File) => {
-    setLoading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const response = await axios.post(IMPORT_STUDENTS_ENDPOINT, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
-
-      toast.success(response.data.message || "Data siswa berhasil diimpor! ✅");
-      setIsMassUploadModalVisible(false);
-      setFileList([]);
-      fetchStudents();
-    } catch (error: any) {
-      console.error("Gagal Upload File:", error);
-      const errorMessage = axios.isAxiosError(error)
-        ? error.response?.data?.message || error.message
-        : "Gagal mengimpor data. Pastikan format file sudah benar.";
-
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Props untuk Komponen Upload Ant Design (Mencegah Auto Upload)
-  const uploadProps: UploadProps = {
-    accept: ".xlsx",
-    maxCount: 1,
-    fileList,
-    onRemove: (file) => {
-      const newFileList = fileList.filter((item) => item.uid !== file.uid);
-      setFileList(newFileList);
-    },
-    beforeUpload: (file: File) => {
-      // Simpan file ke state dan cegah upload otomatis
-      const fileWithObj = {
-        ...file,
-        originFileObj: file,
-        uid: file.name,
-        name: file.name,
-      };
-      setFileList([fileWithObj] as any[]);
-      return false;
-    },
-  };
-  // ------------------------------------------
+  // --- 6. Fungsi UI/Handler ---
 
   const handleOpenEditForm = (student: Student) => {
     setFormType("edit");
@@ -476,6 +381,7 @@ const StudentList: React.FC = () => {
       formAdmissionType = "Transfer";
     }
 
+    // Menggunakan pemetaan eksplisit untuk mengatasi ketidakcocokan nama kunci (snake_case vs camelCase)
     form.setFieldsValue({
       // Data ID, Kontak, Agama, Alamat (yang namanya cocok atau dipetakan secara langsung)
       nis: student.nis,
@@ -576,7 +482,24 @@ const StudentList: React.FC = () => {
     }
   };
 
-  // --- 7. Definisi Kolom Tabel & Handler Tampilan ---
+  const handleSearch = (value: string) => {
+    setSearchText(value);
+    const lowercasedValue = value.toLowerCase();
+
+    if (lowercasedValue) {
+      const filteredData = initialData.filter(
+        (student) =>
+          student.fullname.toLowerCase().includes(lowercasedValue) ||
+          student.nis.toLowerCase().includes(lowercasedValue) ||
+          student.nisn.toLowerCase().includes(lowercasedValue)
+      );
+      setData(filteredData);
+    } else {
+      setData(initialData);
+    }
+  };
+
+  // --- 7. Definisi Kolom Tabel & Breadcrumb ---
 
   const columns: ColumnsType<Student> = [
     {
@@ -671,13 +594,20 @@ const StudentList: React.FC = () => {
     setIsFormModalVisible(true);
   };
 
-  // 💡 FUNGSI BARU: Langsung membuka modal Mass Upload
-  const handleOpenMassUploadModal = () => {
-    setIsMassUploadModalVisible(true);
-    setFileList([]); // Reset list file saat modal dibuka
+  const menu = {
+    items: [
+      {
+        key: "1",
+        label: "Import from Excel",
+        icon: <UploadOutlined />,
+      },
+      {
+        key: "2",
+        label: "Import from CSV",
+        icon: <UploadOutlined />,
+      },
+    ],
   };
-
-  // 🗑️ Item menu dropdown tidak diperlukan lagi
 
   const breadcrumbItems = [
     { title: <a href="/">Home</a> },
@@ -718,6 +648,7 @@ const StudentList: React.FC = () => {
         </Title>
         <Title level={3} style={{ margin: 0 }}>
           {academicYear}{" "}
+          {/* ⭐️ PERBAIKAN: Menampilkan Tahun Akademik dari state */}
         </Title>
       </div>
 
@@ -729,6 +660,7 @@ const StudentList: React.FC = () => {
           marginBottom: "20px",
         }}
       >
+        {/* Menggunakan Space.Compact + Input + Button */}
         <Space.Compact style={{ width: 400 }}>
           <Input
             placeholder="Search student by Name, NIS, or NISN..."
@@ -748,16 +680,15 @@ const StudentList: React.FC = () => {
         </Space.Compact>
 
         <Space>
-          {/* 💡 PERBAIKAN: Tombol Mass Upload langsung memanggil handler */}
-          <Button
-            type="primary"
-            style={{ backgroundColor: "#28a745", borderColor: "#28a745" }}
-            icon={<UploadOutlined />}
-            onClick={handleOpenMassUploadModal} // ⬅️ Perubahan di sini
-          >
-            Mass Upload
-          </Button>
-
+          <Dropdown menu={menu} placement="bottomRight" trigger={["click"]}>
+            <Button
+              type="primary"
+              style={{ backgroundColor: "#28a745", borderColor: "#28a745" }}
+              icon={<UploadOutlined />}
+            >
+              Mass Upload <DownOutlined />
+            </Button>
+          </Dropdown>
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -975,74 +906,6 @@ const StudentList: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-
-      {/* --- MODAL MASS UPLOAD SISWA --- */}
-      <Modal
-        title="Mass Upload Students (.xlsx)"
-        open={isMassUploadModalVisible}
-        onCancel={() => {
-          setIsMassUploadModalVisible(false);
-          setFileList([]);
-        }}
-        width={500}
-        footer={[
-          <Button
-            key="back"
-            onClick={() => {
-              setIsMassUploadModalVisible(false);
-              setFileList([]);
-            }}
-          >
-            Cancel
-          </Button>,
-          <Button
-            key="submit"
-            type="primary"
-            onClick={() => {
-              const fileToUpload = fileList[0]?.originFileObj;
-              if (fileToUpload) {
-                handleMassUpload(fileToUpload as File);
-              } else {
-                toast.warn("Silakan pilih file untuk diunggah.");
-              }
-            }}
-            loading={loading}
-            disabled={fileList.length === 0 || loading}
-          >
-            {loading ? "Uploading..." : "Upload File"}
-          </Button>,
-        ]}
-      >
-        <Space direction="vertical" style={{ width: "100%", paddingTop: 10 }}>
-          <Typography.Paragraph>
-            Pastikan file Excel yang Anda upload memiliki header dan format
-            kolom yang sesuai seperti pada template.
-          </Typography.Paragraph>
-
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={handleDownloadTemplate}
-            type="dashed"
-            block
-            style={{ marginBottom: 16 }}
-          >
-            Download Template **students.xlsx**
-          </Button>
-
-          <Upload {...uploadProps}>
-            <Button icon={<UploadOutlined />} disabled={fileList.length > 0}>
-              Select **.xlsx** File to Upload
-            </Button>
-          </Upload>
-
-          {fileList.length > 0 && (
-            <Typography.Text type="secondary" style={{ marginTop: 10 }}>
-              File terpilih: **{fileList[0].name}**
-            </Typography.Text>
-          )}
-        </Space>
-      </Modal>
-      {/* ------------------------------------------------ */}
     </div>
   );
 };

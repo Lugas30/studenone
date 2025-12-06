@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, Key, useCallback } from "react";
 import axios, { AxiosError } from "axios";
+// Import library sheetjs untuk membuat file Excel
+import * as XLSX from "xlsx";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import {
@@ -29,6 +31,7 @@ import {
   UserAddOutlined,
   DownloadOutlined,
   EyeOutlined,
+  FileExcelOutlined, // Ikon untuk template Excel
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import moment from "moment";
@@ -52,7 +55,6 @@ interface Teacher {
   gender: "male" | "female";
   phone: string;
   email: string;
-  // 🔑 Pastikan API endpoint GET mengembalikan field 'password' jika ini ingin ditampilkan
   password?: string;
   is_active: boolean;
   signature: string | null;
@@ -85,12 +87,13 @@ interface TeacherApiResponse {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 const BASE_URL = `${API_URL}/teachers`;
+const IMPORT_TEACHERS_ENDPOINT = `${API_URL}/teacher/import`;
 const IMAGE_BASE_URL =
   process.env.NEXT_PUBLIC_API_IMAGE_URL ||
   "https://so-api.queensland.id/storage/";
 
 // ===================================
-// 2. DETAIL VIEW MODAL COMPONENT (PASSWORD DITAMPILKAN LANGSUNG) ⚠️
+// 2. DETAIL VIEW MODAL COMPONENT
 // ===================================
 
 interface DetailModalProps {
@@ -116,7 +119,6 @@ const TeacherDetailModal: React.FC<DetailModalProps> = ({
     },
     { label: "Phone", value: teacher.phone },
     { label: "Email", value: teacher.email },
-    // ⚠️ BARIS INI MENAMPILKAN NILAI PASSWORD SECARA LANGSUNG
     { label: "Password", value: teacher.password || "-" },
     {
       label: "Join Date",
@@ -549,7 +551,7 @@ const TeacherFormModal: React.FC<FormModalProps> = ({
 };
 
 // ===================================
-// 5. MAIN COMPONENT
+// 5. MAIN COMPONENT (DENGAN MASS UPLOAD BARU DAN PERBAIKAN)
 // ===================================
 
 const TeachersPage: React.FC = () => {
@@ -564,6 +566,12 @@ const TeachersPage: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
   const [currentAcademicYear, setCurrentAcademicYear] = useState("Loading...");
+
+  // --- 💡 STATE UNTUK MASS UPLOAD ---
+  const [isMassUploadModalVisible, setIsMassUploadModalVisible] =
+    useState(false);
+  const [fileList, setFileList] = useState<any[]>([]);
+  // ------------------------------------------
 
   // Fetch Data Guru
   const fetchTeachers = useCallback(async (page = 1, limit = 10) => {
@@ -628,11 +636,10 @@ const TeachersPage: React.FC = () => {
     setCurrentTeacher(null);
   };
 
-  // Handler Submit Form (Create/Update)
+  // Handler Submit Form (Create/Update) - Logika tetap sama
   const handleFormSubmit = async (values: TeacherFormValues) => {
     const formData = new FormData();
 
-    // Append all basic fields
     formData.append("academic_year_id", values.academic_year_id.toString());
     formData.append("nip", values.nip);
     formData.append("name", values.name);
@@ -642,12 +649,10 @@ const TeachersPage: React.FC = () => {
     formData.append("email", values.email);
     formData.append("is_active", values.is_active ? "1" : "0");
 
-    // Append optional fields only if they exist
     if (values.nuptk) formData.append("nuptk", values.nuptk);
     if (values.note) formData.append("note", values.note);
     if (values.password) formData.append("password", values.password);
 
-    // Penanganan File Signature - Mengambil objek file mentah
     const signatureFile = values.signature?.[0]?.originFileObj;
     if (signatureFile) {
       formData.append("signature", signatureFile);
@@ -662,7 +667,6 @@ const TeachersPage: React.FC = () => {
     try {
       let response;
       if (isEditing && currentTeacher) {
-        // UPDATE
         formData.append("_method", "PUT");
         response = await axios.post(
           `${BASE_URL}/${currentTeacher.id}`,
@@ -676,7 +680,6 @@ const TeachersPage: React.FC = () => {
           }
         );
       } else {
-        // CREATE
         response = await axios.post(BASE_URL, formData, axiosConfig);
         toast.success(
           response.data.message || "Teacher added successfully! ✅",
@@ -713,6 +716,101 @@ const TeachersPage: React.FC = () => {
       });
     }
   };
+
+  // --- 💡 FUNGSI MASS UPLOAD BARU YANG DIREFRAKTOR ---
+
+  // 6. Fungsi Download Template
+  const handleDownloadTemplate = () => {
+    const data = [
+      {
+        NIP: "NIP929875",
+        NUPTK: "NUPTK401234",
+        "NAMA LENGKAP": "Adi Maulana",
+        "TGL DAFTAR": "2018-08-05",
+        "JENIS KELAMIN": "Perempuan",
+        "NO TELEPON": "08167419761",
+        EMAIL: "adimaulana@studentone.id",
+        PASSWORD: "pass9372",
+        NOTE: "",
+      },
+      {
+        NIP: "NIP458185",
+        NUPTK: "NUPTK334742",
+        "NAMA LENGKAP": "Oka Setiawan",
+        "TGL DAFTAR": "2025-10-26",
+        "JENIS KELAMIN": "Laki-laki",
+        "NO TELEPON": "08689588151",
+        EMAIL: "okasetiawan@studentone.id",
+        PASSWORD: "pass9707",
+        NOTE: "",
+      },
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Teachers");
+
+    XLSX.writeFile(workbook, "Teachers.xlsx");
+
+    toast.info("Template Teachers.xlsx berhasil diunduh.");
+  };
+
+  // 7. Fungsi utama yang menjalankan API POST/IMPORT
+  const handleMassUpload = async (file: File) => {
+    setLoading(true);
+    const formData = new FormData();
+    formData.append("file", file); // Key 'file' harus sesuai dengan API
+
+    try {
+      const response = await axios.post(IMPORT_TEACHERS_ENDPOINT, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      toast.success(response.data.message || "Data guru berhasil diimpor! ✅");
+      setIsMassUploadModalVisible(false); // Tutup modal
+      setFileList([]); // Kosongkan list file
+      fetchTeachers(1, pageSize); // Refresh data
+    } catch (error: any) {
+      console.error("Gagal Upload File:", error.response?.data || error);
+      toast.error(
+        error.response?.data?.message ||
+          "Gagal mengimpor data. Pastikan format file sudah benar."
+      );
+      // Jangan reset fileList di sini agar user bisa coba lagi
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 8. Props untuk Komponen Upload yang disederhanakan
+  const uploadProps: UploadProps = {
+    accept: ".xlsx",
+    maxCount: 1,
+    fileList,
+    onRemove: (file) => {
+      // Filter file yang dihapus
+      const newFileList = fileList.filter((item) => item.uid !== file.uid);
+      setFileList(newFileList);
+    },
+    beforeUpload: (file: File) => {
+      // Simpan file ke state, termasuk originFileObj
+      const fileWithObj = {
+        ...file,
+        originFileObj: file,
+        uid: file.name, // Gunakan nama file sebagai uid sementara
+        name: file.name,
+      };
+      setFileList([fileWithObj] as any[]);
+      return false; // Mencegah upload otomatis Ant Design
+    },
+    // Dummy customRequest untuk memenuhi tipe Ant Design, karena kita panggil manual
+    customRequest: () => {
+      return;
+    },
+  };
+  // ------------------------------------------
 
   const columns = getColumns(handleEdit, handleDelete, handleView);
 
@@ -759,14 +857,16 @@ const TeachersPage: React.FC = () => {
             style={{ maxWidth: 300 }}
           />
           <Space>
+            {/* *** TOMBOL MASS UPLOAD BARU *** */}
             <Button
               type="primary"
               style={{ backgroundColor: "green", borderColor: "green" }}
               icon={<UploadIcon />}
-              onClick={() => toast.info("Mass Upload Function (Simulation) 📤")}
+              onClick={() => setIsMassUploadModalVisible(true)}
             >
               Mass Upload
             </Button>
+            {/* ******************************* */}
             <Button
               type="primary"
               icon={<UserAddOutlined />}
@@ -848,6 +948,73 @@ const TeachersPage: React.FC = () => {
         onClose={handleCloseDetailModal}
         teacher={currentTeacher}
       />
+
+      {/* *** MODAL MASS UPLOAD *** */}
+      <Modal
+        title="Mass Upload Teachers (.xlsx)"
+        open={isMassUploadModalVisible}
+        onCancel={() => {
+          setIsMassUploadModalVisible(false);
+          setFileList([]); // Reset file list saat modal ditutup
+        }}
+        footer={[
+          <Button
+            key="back"
+            onClick={() => {
+              setIsMassUploadModalVisible(false);
+              setFileList([]);
+            }}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            // Panggil fungsi handleMassUpload
+            onClick={() => {
+              const fileToUpload = fileList[0]?.originFileObj;
+              if (fileToUpload) {
+                // Panggil fungsi upload yang sudah direfaktor
+                handleMassUpload(fileToUpload as File);
+              } else {
+                toast.warn("Silakan pilih file untuk diunggah.");
+              }
+            }}
+            loading={loading}
+            disabled={fileList.length === 0 || loading}
+          >
+            {loading ? "Uploading..." : "Upload File"}
+          </Button>,
+        ]}
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Typography.Paragraph>
+            Pastikan file Excel yang Anda upload memiliki format tabel yang
+            sesuai: **NIP, NUPTK, NAMA LENGKAP, TGL DAFTAR (YYYY-MM-DD), JENIS
+            KELAMIN (Laki-laki/Perempuan), NO TELEPON, EMAIL, PASSWORD, NOTE**.
+          </Typography.Paragraph>
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={handleDownloadTemplate}
+            type="dashed"
+            block
+            style={{ marginBottom: 16 }}
+          >
+            Download Template **Teachers.xlsx**
+          </Button>
+          <Upload {...uploadProps}>
+            <Button icon={<UploadIcon />} disabled={fileList.length > 0}>
+              Select **.xlsx** File to Upload
+            </Button>
+          </Upload>
+          {fileList.length > 0 && (
+            <Typography.Text type="secondary" style={{ marginTop: 10 }}>
+              File terpilih: **{fileList[0].name}**
+            </Typography.Text>
+          )}
+        </Space>
+      </Modal>
+      {/* ******************************* */}
     </>
   );
 };
